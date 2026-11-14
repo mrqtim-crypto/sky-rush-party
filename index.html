@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="mobile-web-app-capable" content="yes" />
-  <title>小朋友下樓梯 3D：深淵大亂鬥｜多人連線換裝派對</title>
+  <title>小朋友下樓梯 3D：深淵大亂鬥｜單人極速＆多人連線派對</title>
   <link rel="stylesheet" href="./styles.css" />
   <!-- PeerJS for Serverless WebRTC P2P Multiplayer on GitHub Pages -->
   <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
@@ -32,39 +32,46 @@
         <span class="brand-icon">🪜</span>
         <div>
           <h1>小朋友下樓梯 3D <span class="accent">深淵大亂鬥</span></h1>
-          <p class="subtitle">百變紙娃娃 × 踩頭推人 × 害人道具 × 背後靈復仇</p>
+          <p class="subtitle">極速百層挑戰 × 精緻紙娃娃 × 踩頭推人 × 背後靈復仇</p>
         </div>
       </div>
       <div class="header-right-group">
-        <div id="online-status" class="online-tag">🔄 準備連線中...</div>
+        <button id="btn-sound-toggle" class="icon-pill-btn" title="音效開關">🔊</button>
+        <div id="online-status" class="online-tag">🟢 單人/連線就緒</div>
         <button id="btn-top-share" class="mini-share-btn">🔗 邀朋友</button>
       </div>
     </header>
 
-    <!-- 3D Character Preview Stage (Drag to Rotate) -->
+    <!-- Unobstructed 3D Character Showcase Window (Top Half - Never Blocked by UI!) -->
     <div id="preview-touch-zone" class="preview-stage">
-      <div class="preview-floating-tips">
-        <span class="tip-chip">👟 跳到別人頭上可踩扁二段跳</span>
-        <span class="tip-chip">🥊 肘擊推人下深淵</span>
-        <span class="tip-chip">👻 死掉變背後靈繼續害人</span>
+      <div class="stage-top-bar">
+        <span id="stage-name-preview" class="stage-name-tag">👑 下樓梯小霸王</span>
+        <span class="stage-rotate-hint">👆 左右滑動旋轉角色</span>
       </div>
-      <div class="preview-quick-actions">
-        <button id="btn-random-all" class="random-dice-btn">🎲 隨機穿搭＋名字</button>
-        <button id="btn-random-outfit" class="random-dice-btn secondary">✨ 隨機換裝</button>
+
+      <div class="stage-corner-actions">
+        <button id="btn-random-all" class="random-dice-btn">🎲 隨機全身＋名</button>
+        <button id="btn-random-outfit" class="random-dice-btn secondary">✨ 隨機穿搭</button>
       </div>
     </div>
 
-    <!-- Bottom Mobile-Optimized Tabbed Sheet -->
+    <!-- Bottom Compact Tabbed Sheet (Strictly Below Character Stage) -->
     <section class="lobby-sheet">
-      <!-- Mobile Tab Switcher -->
-      <div class="lobby-tabs">
-        <button class="lobby-tab active" data-tab="tab-avatar">🎭 角色造型設定</button>
-        <button class="lobby-tab" data-tab="tab-room">
-          🏠 連線房間與名單 <span id="tab-player-badge" class="tab-badge">1人</span>
-        </button>
+      <!-- Tab Switcher + Solo Bot Toggle -->
+      <div class="sheet-top-bar">
+        <div class="lobby-tabs">
+          <button class="lobby-tab active" data-tab="tab-avatar">🎭 角色造型設定</button>
+          <button class="lobby-tab" data-tab="tab-room">
+            🏠 好友連線房 <span id="tab-player-badge" class="tab-badge">1人</span>
+          </button>
+        </div>
+        <label class="compact-bot-toggle" title="開啟後會有5位搞笑穿搭AI一起亂鬥；關閉則為純個人百層極限挑戰">
+          <input type="checkbox" id="chk-fill-bots" checked />
+          <span>🤖 AI亂鬥陪玩</span>
+        </label>
       </div>
 
-      <!-- TAB 1: CHARACTER CUSTOMIZATION (Gender / Hair / Top / Bottom / Suit / Name) -->
+      <!-- TAB 1: CHARACTER CUSTOMIZATION -->
       <div id="tab-avatar" class="tab-panel active">
         <div class="customizer-scroll">
           <!-- Name Row -->
@@ -76,17 +83,22 @@
             </div>
           </div>
 
-          <!-- Gender Row -->
-          <div class="cust-row">
-            <label class="cust-label">⚧️ 性別氣質</label>
-            <div id="opt-gender" class="pill-group"></div>
+          <!-- Gender & Hair Color Row -->
+          <div class="cust-row split-two-col">
+            <div>
+              <label class="cust-label">⚧️ 性別氣質</label>
+              <div id="opt-gender" class="pill-group"></div>
+            </div>
+            <div>
+              <label class="cust-label">🎨 髮色</label>
+              <div id="opt-hair-color" class="color-swatch-row"></div>
+            </div>
           </div>
 
-          <!-- Hair Style & Color Row -->
+          <!-- Hair Style Row -->
           <div class="cust-row">
             <label class="cust-label">💇 髮型與頭飾</label>
             <div id="opt-hair" class="pill-group"></div>
-            <div id="opt-hair-color" class="color-swatch-row"></div>
           </div>
 
           <!-- Top Row -->
@@ -129,11 +141,6 @@
         </div>
 
         <div class="room-roster-wrap">
-          <label class="bot-toggle-row">
-            <input type="checkbox" id="chk-fill-bots" checked />
-            <span>🤖 自動補滿 AI 對手陪玩（湊滿 6 人熱鬧互相傷害）</span>
-          </label>
-
           <div class="roster-box">
             <div class="section-title">
               <span>👥 房間等待名單</span>
@@ -144,13 +151,16 @@
         </div>
       </div>
 
-      <!-- Pinned CTA Row (Always visible on both tabs!) -->
+      <!-- Pinned CTA Row: Instant Solo Play + Room Multiplayer Start -->
       <div class="lobby-cta-row">
-        <button id="btn-guest-ready" class="start-game-btn ready-toggle-btn hidden">
-          ✅ 點擊準備完成（等待房主開局）
+        <button id="btn-solo-start" class="start-game-btn solo-instant-btn">
+          ⚡ 單人立即開玩
         </button>
-        <button id="btn-host-start" class="start-game-btn">
-          🚀 房主開始遊戲！（深淵大逃殺・活到最後獲勝）
+        <button id="btn-guest-ready" class="start-game-btn ready-toggle-btn hidden">
+          ✅ 準備完成
+        </button>
+        <button id="btn-host-start" class="start-game-btn room-start-btn">
+          🚀 房間多人開局
         </button>
       </div>
     </section>
@@ -161,9 +171,12 @@
     <!-- Top Status Bar -->
     <div class="hud-top">
       <div class="hud-top-row">
-        <!-- Floor Depth & Personal HP -->
+        <!-- Floor Depth, Combo & Personal HP -->
         <div class="depth-hp-card">
-          <div class="floor-badge" id="hud-floor">🌊 地下 B001 層</div>
+          <div class="floor-row-inline">
+            <div class="floor-badge" id="hud-floor">🌊 地下 B001 層</div>
+            <span id="hud-combo-badge" class="combo-badge hidden">🔥 連下 x3</span>
+          </div>
           <div class="hp-bar-wrap">
             <span class="hp-label" id="hud-hp-text">❤️ 12/12</span>
             <div id="hud-hp-segments" class="hp-segments"></div>
@@ -172,14 +185,17 @@
 
         <!-- Active Field Hazard / Ceiling Warning -->
         <div class="center-status-col">
-          <div id="hud-ceiling-warn" class="ceiling-pill">⚙️ 尖刺天花板逼近中</div>
-          <div id="hud-field-event" class="field-event-pill hidden">⚡ 全場加速 5.0s</div>
+          <div id="hud-ceiling-warn" class="ceiling-pill">⚙️ 尖刺逼近中</div>
+          <div id="hud-field-event" class="field-event-pill hidden">⚡ 全場加速中</div>
         </div>
 
-        <!-- Alive Count & Camera Toggle -->
+        <!-- Alive Count & Camera/Sound Toggle -->
         <div class="right-status-col">
           <span class="count-pill alive" id="hud-alive-count">👑 存活: 6</span>
-          <button id="btn-cam-mode" class="cam-toggle-btn">🎥 俯視視角</button>
+          <div class="hud-mini-btns">
+            <button id="btn-cam-mode" class="cam-toggle-btn">🎥 視角</button>
+            <button id="btn-hud-restart" class="cam-toggle-btn restart-mini-btn" title="立即重開一局">🔄 重來</button>
+          </div>
         </div>
       </div>
 
@@ -190,9 +206,10 @@
     <!-- Center Announcement Banner -->
     <div id="center-banner" class="center-banner hidden"></div>
 
-    <!-- Ghost Mode Status Banner -->
+    <!-- Ghost Mode Status Banner + Instant Finish Button for Solo Players -->
     <div id="ghost-mode-banner" class="ghost-banner hidden">
-      👻 你已變成「背後靈」！靠近存活玩家，用右下方技能詛咒踏板或召喚落石害死他們！
+      <span>👻 你已變成「背後靈」！用右下技能害人，或</span>
+      <button id="btn-ghost-finish-now" class="ghost-finish-btn">🏁 立即結算重玩</button>
     </div>
 
     <!-- ================= BOTTOM MOBILE-OPTIMIZED TOUCH CONTROLS ================= -->
@@ -272,7 +289,8 @@
       <div class="leaderboard-list" id="leaderboard-list"></div>
 
       <div class="result-actions">
-        <button id="btn-back-lobby" class="start-game-btn">🔄 返回大廳換裝再戰一局</button>
+        <button id="btn-play-again-instant" class="start-game-btn solo-instant-btn">⚡ 立即再戰一局</button>
+        <button id="btn-back-lobby" class="start-game-btn secondary-lobby-btn">🎭 返回大廳換裝</button>
       </div>
     </div>
   </div>

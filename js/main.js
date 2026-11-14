@@ -18,38 +18,38 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x090d16);
-scene.fog = new THREE.FogExp2(0x090d16, 0.018);
+scene.fog = new THREE.FogExp2(0x090d16, 0.016);
 
-const camera = new THREE.PerspectiveCamera(54, window.innerWidth / window.innerHeight, 0.1, 140);
+const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 140);
 
 // Lighting
-const ambientLight = new THREE.AmbientLight(0xffffff, 0.78);
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.85);
 scene.add(ambientLight);
 
-const dirLight = new THREE.DirectionalLight(0xfffbeb, 1.15);
+const dirLight = new THREE.DirectionalLight(0xfffbeb, 1.25);
 dirLight.position.set(8, 22, 14);
 scene.add(dirLight);
 
-const rimLight = new THREE.DirectionalLight(0x38bdf8, 0.55);
-rimLight.position.set(-10, -10, -8);
+const rimLight = new THREE.DirectionalLight(0x38bdf8, 0.65);
+rimLight.position.set(-10, -8, -8);
 scene.add(rimLight);
 
 // Lobby Preview Stage Group
 const lobbyStageGroup = new THREE.Group();
 scene.add(lobbyStageGroup);
 
-const pedestalGeo = new THREE.CylinderGeometry(1.35, 1.55, 0.28, 32);
+const pedestalGeo = new THREE.CylinderGeometry(1.18, 1.38, 0.24, 36);
 const pedestalMat = new THREE.MeshStandardMaterial({
   color: 0x1e293b,
-  metalness: 0.4,
-  roughness: 0.3
+  metalness: 0.45,
+  roughness: 0.25
 });
 const pedestalMesh = new THREE.Mesh(pedestalGeo, pedestalMat);
-pedestalMesh.position.y = -0.14;
+pedestalMesh.position.y = -0.12;
 lobbyStageGroup.add(pedestalMesh);
 
 const pedestalRing = new THREE.Mesh(
-  new THREE.TorusGeometry(1.42, 0.06, 12, 36),
+  new THREE.TorusGeometry(1.24, 0.05, 12, 40),
   new THREE.MeshBasicMaterial({ color: 0x38bdf8 })
 );
 pedestalRing.rotation.x = Math.PI / 2;
@@ -69,10 +69,12 @@ try {
   if (savedName) nameInput.value = savedName;
 } catch (e) {}
 
+// Lobby Avatar (showNameplate: false so the 3D hair/crown/head is 100% unobstructed!)
 const lobbyAvatar = new CharacterAvatar({
   id: 'preview_me',
   name: nameInput.value || '下樓梯小霸王',
   isLocal: true,
+  showNameplate: false,
   appearance: myAppearance
 });
 lobbyAvatar.dropRing.visible = false;
@@ -84,19 +86,47 @@ world.root.visible = false;
 
 // Game State
 let gameState = 'lobby'; // 'lobby' | 'playing' | 'result'
+let isSoloSession = false;
 let cameraCloseMode = false;
 let matchParticipants = [];
-const players = new Map(); // id -> playerRuntimeObj
+const players = new Map();
 let localPlayer = null;
 let netSyncAccumulator = 0;
 
-// Cooldowns & Input
+// Fast-Paced Combo & Cooldowns
+let floorCombo = 0;
+let floorComboTimer = 0;
+let screenShakeTimer = 0;
 let shoveCooldown = 0;
 let ghostCurseCooldown = 0;
 let ghostRockCooldown = 0;
 let joyX = 0;
 let joyY = 0;
 const keys = {};
+
+// ================= LOBBY CAMERA VIEW OFFSET (NEVER BLOCK CHARACTER!) =================
+function updateCameraProjection() {
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  camera.aspect = w / h;
+
+  if (gameState === 'lobby') {
+    const stageEl = document.getElementById('preview-touch-zone');
+    if (stageEl) {
+      const rect = stageEl.getBoundingClientRect();
+      const stageCenterY = rect.top + rect.height * 0.54;
+      const screenCenterY = h * 0.5;
+      // Shift projection center upward so (0, 1.0, 0) renders squarely inside #preview-touch-zone!
+      const offsetY = screenCenterY - stageCenterY;
+      camera.setViewOffset(w, h, 0, offsetY, w, h);
+    } else {
+      camera.setViewOffset(w, h, 0, h * 0.24, w, h);
+    }
+  } else {
+    camera.clearViewOffset();
+  }
+  camera.updateProjectionMatrix();
+}
 
 // ================= CUSTOMIZATION UI SETUP =================
 function saveProfileLocally() {
@@ -132,7 +162,6 @@ function renderCustomizationUI() {
     myAppearance.hair = val;
   });
 
-  // Hair Color Swatches
   const colorRow = document.getElementById('opt-hair-color');
   if (colorRow) {
     colorRow.innerHTML = '';
@@ -150,7 +179,6 @@ function renderCustomizationUI() {
     });
   }
 
-  // Selecting a Top or Bottom automatically disables full Suit so the user sees their choice immediately
   bindPills('opt-top', CUSTOMIZATION_CATALOG.tops, 'top', (val) => {
     myAppearance.top = val;
     myAppearance.suit = 'none';
@@ -167,7 +195,7 @@ function renderCustomizationUI() {
 
   const isWearingSuit = myAppearance.suit && myAppearance.suit !== 'none';
   const suitObj = CUSTOMIZATION_CATALOG.suits.find((s) => s.id === myAppearance.suit);
-  const hintText = isWearingSuit ? `(目前已穿 ${suitObj ? suitObj.label.split(' ')[1] : '套裝'}，點選可切回混搭)` : '';
+  const hintText = isWearingSuit ? `(已穿${suitObj ? suitObj.label.split(' ')[1] : '套裝'}，點選可切回混搭)` : '';
   document.getElementById('top-override-hint').textContent = hintText;
   document.getElementById('bottom-override-hint').textContent = hintText;
 }
@@ -176,6 +204,8 @@ function refreshAvatarAndSync() {
   renderCustomizationUI();
   const cleanName = (nameInput.value || '下樓梯小霸王').trim().slice(0, 10) || '下樓梯小霸王';
   lobbyAvatar.updateAppearance(myAppearance, cleanName);
+  const stageTag = document.getElementById('stage-name-preview');
+  if (stageTag) stageTag.textContent = `👑 ${cleanName}`;
   saveProfileLocally();
   network.updateMyProfile({
     name: cleanName,
@@ -192,7 +222,15 @@ document.querySelectorAll('.lobby-tab').forEach((tabBtn) => {
     tabBtn.classList.add('active');
     const target = document.getElementById(tabBtn.dataset.tab);
     if (target) target.classList.add('active');
+    updateCameraProjection();
   });
+});
+
+// Sound Mute Toggle
+const soundBtn = document.getElementById('btn-sound-toggle');
+soundBtn.addEventListener('click', () => {
+  const on = sfx.toggleMute();
+  soundBtn.textContent = on ? '🔊' : '🔇';
 });
 
 // Randomize Buttons
@@ -232,7 +270,7 @@ window.addEventListener('pointermove', (e) => {
   if (!isDraggingPreview) return;
   const dx = e.clientX - lastPreviewX;
   lastPreviewX = e.clientX;
-  lobbyAvatar.group.rotation.y += dx * 0.015;
+  lobbyAvatar.group.rotation.y += dx * 0.016;
 });
 window.addEventListener('pointerup', () => {
   isDraggingPreview = false;
@@ -288,6 +326,7 @@ const network = new RoomNetwork({
     }
   },
   onMatchStart: (payload) => {
+    isSoloSession = false;
     startMatchFromPayload(payload);
   },
   onRemoteState: (playerId, state) => {
@@ -334,7 +373,6 @@ const network = new RoomNetwork({
   }
 });
 
-// Parse URL params for One-Click Invite Link
 const urlParams = new URLSearchParams(window.location.search);
 if (urlParams.get('room')) {
   roomInput.value = urlParams.get('room').toUpperCase().slice(0, 8);
@@ -345,6 +383,7 @@ if (urlParams.get('pwd')) {
 
 renderCustomizationUI();
 refreshAvatarAndSync();
+updateCameraProjection();
 
 network.joinOrCreateRoom({
   roomId: roomInput.value,
@@ -385,14 +424,76 @@ btnGuestReady.addEventListener('click', () => {
   const nextReady = !network.myReady;
   sfx.readyBeep(nextReady);
   network.updateMyProfile({ ready: nextReady });
-  btnGuestReady.textContent = nextReady
-    ? '✅ 已準備完成！（點擊取消）'
-    : '⏳ 點擊準備完成（等待房主開局）';
+  btnGuestReady.textContent = nextReady ? '✅ 已準備 (點此取消)' : '⏳ 點擊準備完成';
+});
+
+// ================= INSTANT SOLO PLAY & MULTIPLAYER START =================
+function startSoloMatchNow() {
+  isSoloSession = true;
+  const cleanName = (nameInput.value || '下樓梯小霸王').trim().slice(0, 10) || '下樓梯小霸王';
+  const list = [
+    {
+      id: network.myId,
+      name: cleanName,
+      appearance: { ...myAppearance },
+      isBot: false
+    }
+  ];
+
+  if (chkFillBots.checked) {
+    for (let i = 1; i <= 5; i++) {
+      list.push({
+        id: `bot_${i}`,
+        name: `🤖 ${getRandomNickname()}`,
+        appearance: getRandomAppearance(true),
+        isBot: true
+      });
+    }
+  }
+
+  startMatchFromPayload({
+    seed: Math.floor(Math.random() * 900000) + 100000,
+    participants: list
+  });
+}
+
+document.getElementById('btn-solo-start').addEventListener('click', startSoloMatchNow);
+
+document.getElementById('btn-hud-restart').addEventListener('click', () => {
+  if (isSoloSession || network.roomPlayers.size <= 1) {
+    startSoloMatchNow();
+  } else if (network.isHost) {
+    btnHostStart.click();
+  }
+});
+
+document.getElementById('btn-ghost-finish-now').addEventListener('click', () => {
+  let topSurvivor = null;
+  players.forEach((p) => {
+    if (!p.isGhost && (!topSurvivor || p.maxFloor > topSurvivor.maxFloor)) {
+      topSurvivor = p;
+    }
+  });
+  finishMatch(topSurvivor || localPlayer);
+});
+
+document.getElementById('btn-play-again-instant').addEventListener('click', () => {
+  if (isSoloSession || network.roomPlayers.size <= 1) {
+    startSoloMatchNow();
+  } else if (network.isHost) {
+    btnHostStart.click();
+  } else {
+    document.getElementById('btn-back-lobby').click();
+  }
 });
 
 btnHostStart.addEventListener('click', () => {
-  if (!network.isHost) return;
-  sfx.countdown(true);
+  if (!network.isHost) {
+    // If guest clicks or still connecting, start solo immediately!
+    startSoloMatchNow();
+    return;
+  }
+  isSoloSession = network.roomPlayers.size <= 1;
   const humanPlayers = Array.from(network.roomPlayers.values()).map((p) => ({
     id: p.id,
     name: p.name,
@@ -422,6 +523,7 @@ function switchScreen(screenId) {
   document.querySelectorAll('.screen').forEach((s) => s.classList.remove('active'));
   const target = document.getElementById(screenId);
   if (target) target.classList.add('active');
+  updateCameraProjection();
 }
 
 function addEventFeed(text) {
@@ -436,10 +538,10 @@ function addEventFeed(text) {
   }
   setTimeout(() => {
     if (item.parentNode === feed) feed.removeChild(item);
-  }, 4500);
+  }, 4000);
 }
 
-function showCenterBanner(text, duration = 2000) {
+function showCenterBanner(text, duration = 1800) {
   const banner = document.getElementById('center-banner');
   banner.textContent = text;
   banner.classList.remove('hidden');
@@ -449,12 +551,16 @@ function showCenterBanner(text, duration = 2000) {
 
 function startMatchFromPayload(payload) {
   sfx.countdown(true);
+  sfx.startBgm();
+  sfx.setBgmIntensity(1.0);
+
   gameState = 'playing';
+  floorCombo = 0;
+  floorComboTimer = 0;
   lobbyStageGroup.visible = false;
   world.root.visible = true;
   world.resetWorld(payload.seed || 123456);
 
-  // Clean up previous player meshes
   players.forEach((p) => scene.remove(p.avatar.group));
   players.clear();
 
@@ -467,15 +573,15 @@ function startMatchFromPayload(payload) {
       id: part.id,
       name: part.name,
       isLocal: isMe,
+      showNameplate: true,
       appearance: part.appearance || getRandomAppearance(true)
     });
     scene.add(avatar.group);
 
-    // Spread players across Floor 1 safe platform (y = -3.4)
-    const spreadX = (idx - (total - 1) / 2) * 1.15;
-    const startX = Math.max(-3.8, Math.min(3.8, spreadX));
-    const startY = -FLOOR_VERTICAL_GAP + 0.35;
-    const startZ = (idx % 2 === 0 ? -0.5 : 0.5);
+    const spreadX = total === 1 ? 0 : (idx - (total - 1) / 2) * 1.1;
+    const startX = Math.max(-3.6, Math.min(3.6, spreadX));
+    const startY = -FLOOR_VERTICAL_GAP + 0.32;
+    const startZ = total === 1 ? 0 : (idx % 2 === 0 ? -0.45 : 0.45);
 
     avatar.group.position.set(startX, startY, startZ);
 
@@ -525,7 +631,10 @@ function startMatchFromPayload(payload) {
   updateHudUI();
   updateItemButtonUI();
   switchScreen('hud-screen');
-  showCenterBanner('🔥 深淵大逃殺開始！小心頭頂尖刺與身邊損友！', 2600);
+  const modeMsg = players.size === 1
+    ? '⚡ 單人百層極速挑戰開始！往下衝刺刷新紀錄！'
+    : '🔥 深淵極速大亂鬥開始！踩頭、推人、搶道具！';
+  showCenterBanner(modeMsg, 2000);
 }
 
 // ================= HUD & ITEM UI UPDATES =================
@@ -533,6 +642,14 @@ function updateHudUI() {
   if (!localPlayer) return;
   const floorEl = document.getElementById('hud-floor');
   floorEl.textContent = `🌊 地下 B${String(localPlayer.maxFloor).padStart(3, '0')} 層`;
+
+  const comboEl = document.getElementById('hud-combo-badge');
+  if (floorCombo >= 2 && !localPlayer.isGhost) {
+    comboEl.textContent = `🔥 極速連下 x${floorCombo}`;
+    comboEl.classList.remove('hidden');
+  } else {
+    comboEl.classList.add('hidden');
+  }
 
   const hpText = document.getElementById('hud-hp-text');
   hpText.textContent = localPlayer.isGhost ? '👻 背後靈' : `❤️ ${localPlayer.hp}/12`;
@@ -555,9 +672,9 @@ function updateHudUI() {
   players.forEach((p) => {
     if (!p.isGhost) aliveCount++;
   });
-  document.getElementById('hud-alive-count').textContent = `👑 存活: ${aliveCount}/${players.size}`;
+  document.getElementById('hud-alive-count').textContent =
+    players.size === 1 ? '⚡ 單人挑戰' : `👑 存活: ${aliveCount}/${players.size}`;
 
-  // Toggle Alive vs Ghost Controls
   const aliveCluster = document.getElementById('alive-actions');
   const ghostCluster = document.getElementById('ghost-actions');
   const ghostBanner = document.getElementById('ghost-mode-banner');
@@ -600,7 +717,7 @@ function updateItemButtonUI() {
 function performJump(p) {
   if (!p || p.isGhost || p.avatar.frozenTimer > 0) return;
   if (p.isGrounded) {
-    p.vy = 9.2;
+    p.vy = 10.2;
     p.isGrounded = false;
     if (p.isLocal) sfx.jump();
   }
@@ -608,7 +725,7 @@ function performJump(p) {
 
 function performShove(attacker) {
   if (!attacker || attacker.isGhost || attacker.avatar.frozenTimer > 0) return;
-  attacker.avatar.punchAnimTimer = 0.32;
+  attacker.avatar.punchAnimTimer = 0.28;
   if (attacker.isLocal) sfx.shovePunch();
 
   players.forEach((victim) => {
@@ -618,13 +735,16 @@ function performShove(attacker) {
     const dz = victim.z - attacker.z;
     const distXZ = Math.hypot(dx, dz);
 
-    if (distXZ < 2.35 && Math.abs(dy) < 1.8) {
+    if (distXZ < 2.45 && Math.abs(dy) < 1.8) {
       const angle = Math.atan2(dz, dx);
-      victim.vx += Math.cos(angle) * 10.5;
-      victim.vz += Math.sin(angle) * 10.5;
-      victim.vy = Math.max(victim.vy, 4.8);
+      victim.vx += Math.cos(angle) * 12.5;
+      victim.vz += Math.sin(angle) * 12.5;
+      victim.vy = Math.max(victim.vy, 5.2);
       victim.isGrounded = false;
       victim.lastAttackerId = attacker.id;
+      if (attacker.isLocal || victim.isLocal) {
+        screenShakeTimer = 0.16;
+      }
       addEventFeed(`🥊 ${attacker.name} 狠推了 ${victim.name} 一把！`);
     }
   });
@@ -655,15 +775,16 @@ function executeItemEffect(user, itemType, x, y, z) {
     addEventFeed(`🍌 ${user.name} 在踏板上丟了香蕉皮！`);
   } else if (itemType === 'glove') {
     sfx.shovePunch();
-    user.avatar.punchAnimTimer = 0.45;
+    user.avatar.punchAnimTimer = 0.4;
+    screenShakeTimer = 0.22;
     players.forEach((v) => {
       if (v.id === user.id || v.isGhost) return;
       const dist = Math.hypot(v.x - x, v.z - z);
-      if (dist < 4.2 && Math.abs(v.y - y) < 2.5) {
+      if (dist < 4.5 && Math.abs(v.y - y) < 2.6) {
         const ang = Math.atan2(v.z - z, v.x - x);
-        v.vx += Math.cos(ang) * 16.5;
-        v.vz += Math.sin(ang) * 16.5;
-        v.vy = 7.2;
+        v.vx += Math.cos(ang) * 18.0;
+        v.vz += Math.sin(ang) * 18.0;
+        v.vy = 7.8;
         v.isGrounded = false;
         v.lastAttackerId = user.id;
       }
@@ -671,7 +792,6 @@ function executeItemEffect(user, itemType, x, y, z) {
     addEventFeed(`🥊 ${user.name} 揮出彈簧重拳轟飛對手！`);
   } else if (itemType === 'bomb') {
     sfx.switchTrigger();
-    // Attach time bomb to nearest alive rival, or self if nobody left
     let nearest = null;
     let bestD = Infinity;
     players.forEach((v) => {
@@ -685,8 +805,8 @@ function executeItemEffect(user, itemType, x, y, z) {
     });
     const target = nearest || user;
     target.hasBomb = true;
-    target.bombTimer = 4.2;
-    target.bombPassImmunity = 0.6;
+    target.bombTimer = 3.8;
+    target.bombPassImmunity = 0.55;
     target.avatar.hasBomb = true;
     target.avatar.refreshOverheadLabel();
     addEventFeed(`💣 ${user.name} 把定時炸彈塞給了 ${target.name}！`);
@@ -695,8 +815,8 @@ function executeItemEffect(user, itemType, x, y, z) {
     players.forEach((v) => {
       if (v.id !== user.id && !v.isGhost) {
         const d = Math.hypot(v.x - x, v.y - y, v.z - z);
-        if (d < 6.5) {
-          v.avatar.frozenTimer = 2.0;
+        if (d < 6.8) {
+          v.avatar.frozenTimer = 1.8;
           v.vx *= 0.2;
           v.vz *= 0.2;
         }
@@ -749,7 +869,7 @@ function activateFieldSwitch(actor, switchType) {
 
   if (switchType === 'speed_up') {
     world.speedBoostTimer = 5.5;
-    pill.textContent = '⚡ 全場下墜加速中！';
+    pill.textContent = '⚡ 全場極速下墜中！';
     addEventFeed(`⚡ ${actor.name} 踩下全場加速開關！`);
   } else if (switchType === 'reverse_belt') {
     world.conveyorReversed = !world.conveyorReversed;
@@ -774,7 +894,7 @@ const joyKnob = document.getElementById('joystick-knob');
 let activeJoyPointerId = null;
 let joyCenterX = 0;
 let joyCenterY = 0;
-const maxJoyRadius = 44;
+const maxJoyRadius = 42;
 
 joyZone.addEventListener('pointerdown', (e) => {
   if (activeJoyPointerId !== null) return;
@@ -785,9 +905,8 @@ joyZone.addEventListener('pointerdown', (e) => {
   joyCenterX = e.clientX;
   joyCenterY = e.clientY;
 
-  // Move visual joystick base directly under the player's thumb!
-  const localLeft = Math.max(8, Math.min(rect.width - 126, e.clientX - rect.left - 59));
-  const localBottom = Math.max(8, Math.min(rect.height - 126, rect.bottom - e.clientY - 59));
+  const localLeft = Math.max(8, Math.min(rect.width - 124, e.clientX - rect.left - 58));
+  const localBottom = Math.max(8, Math.min(rect.height - 124, rect.bottom - e.clientY - 58));
   joyBase.style.left = `${localLeft}px`;
   joyBase.style.bottom = `${localBottom}px`;
   joyKnob.style.transform = `translate(0px, 0px)`;
@@ -832,7 +951,7 @@ document.getElementById('btn-jump').addEventListener('pointerdown', (e) => {
 document.getElementById('btn-shove').addEventListener('pointerdown', (e) => {
   e.preventDefault();
   if (!localPlayer || localPlayer.isGhost || shoveCooldown > 0) return;
-  shoveCooldown = 1.4;
+  shoveCooldown = 1.05;
   performShove(localPlayer);
   network.sendAction('shove', {});
 });
@@ -848,7 +967,6 @@ document.getElementById('btn-use-item').addEventListener('pointerdown', (e) => {
 document.getElementById('btn-ghost-curse').addEventListener('pointerdown', (e) => {
   e.preventDefault();
   if (!localPlayer || !localPlayer.isGhost || ghostCurseCooldown > 0) return;
-  // Find closest safe platform near localGhost
   let bestKey = null;
   let bestDist = Infinity;
   for (const [k, p] of world.platforms.entries()) {
@@ -861,7 +979,7 @@ document.getElementById('btn-ghost-curse').addEventListener('pointerdown', (e) =
     }
   }
   if (bestKey !== null) {
-    ghostCurseCooldown = 4.5;
+    ghostCurseCooldown = 3.5;
     const newType = Math.random() < 0.5 ? 'spike' : 'cracked';
     world.cursePlatform(bestKey, newType);
     sfx.ghostCurse();
@@ -873,7 +991,7 @@ document.getElementById('btn-ghost-curse').addEventListener('pointerdown', (e) =
 document.getElementById('btn-ghost-rock').addEventListener('pointerdown', (e) => {
   e.preventDefault();
   if (!localPlayer || !localPlayer.isGhost || ghostRockCooldown > 0) return;
-  ghostRockCooldown = 7.0;
+  ghostRockCooldown = 5.5;
   sfx.switchTrigger();
   world.triggerRockfall(world.ceilingY);
   addEventFeed(`☄️ 你召喚了深淵落石雨！`);
@@ -883,7 +1001,6 @@ document.getElementById('btn-ghost-rock').addEventListener('pointerdown', (e) =>
 document.getElementById('btn-ghost-dash').addEventListener('pointerdown', (e) => {
   e.preventDefault();
   if (!localPlayer || !localPlayer.isGhost) return;
-  // Teleport ghost directly to a random alive survivor to harass them!
   const survivors = [];
   players.forEach((p) => {
     if (!p.isGhost) survivors.push(p);
@@ -897,13 +1014,11 @@ document.getElementById('btn-ghost-dash').addEventListener('pointerdown', (e) =>
   }
 });
 
-// Camera Mode Toggle
 document.getElementById('btn-cam-mode').addEventListener('click', (e) => {
   cameraCloseMode = !cameraCloseMode;
-  e.currentTarget.textContent = cameraCloseMode ? '🎥 近距視角' : '🎥 俯視視角';
+  e.currentTarget.textContent = cameraCloseMode ? '🎥 近距' : '🎥 視角';
 });
 
-// Keyboard support for PC players
 window.addEventListener('keydown', (e) => {
   keys[e.code] = true;
   if (gameState !== 'playing' || !localPlayer) return;
@@ -911,7 +1026,7 @@ window.addEventListener('keydown', (e) => {
     performJump(localPlayer);
   } else if (e.code === 'KeyF' || e.code === 'KeyQ') {
     if (shoveCooldown <= 0 && !localPlayer.isGhost) {
-      shoveCooldown = 1.4;
+      shoveCooldown = 1.05;
       performShove(localPlayer);
       network.sendAction('shove', {});
     }
@@ -929,7 +1044,10 @@ function damagePlayer(p, amount, reasonText) {
   p.hp = Math.max(0, p.hp - amount);
   p.avatar.hp = p.hp;
   p.avatar.refreshOverheadLabel();
-  if (p.isLocal) updateHudUI();
+  if (p.isLocal) {
+    screenShakeTimer = 0.22;
+    updateHudUI();
+  }
 
   if (p.hp <= 0) {
     eliminatePlayer(p, reasonText || `💀 ${p.name} 體力耗盡倒下了！`);
@@ -956,8 +1074,15 @@ function eliminatePlayer(p, message) {
 
   sfx.fallEliminated();
   addEventFeed(message);
+
+  // If pure 1-player mode (no bots/peers), end match immediately!
+  if (players.size === 1) {
+    finishMatch(localPlayer);
+    return;
+  }
+
   if (p.isLocal) {
-    showCenterBanner('👻 你變成了背後靈！用右下技能繼續害人！', 2500);
+    showCenterBanner('👻 你變成了背後靈！可害人或點上方「立即結算重玩」！', 2400);
   }
   updateHudUI();
   checkMatchEndCondition();
@@ -970,7 +1095,6 @@ function checkMatchEndCondition() {
     if (!p.isGhost) aliveList.push(p);
   });
 
-  // End match when 1 survivor left (or 0 if single player died)
   if ((players.size > 1 && aliveList.length <= 1) || aliveList.length === 0) {
     if (aliveList.length === 1) {
       aliveList[0].survivalOrder = 1;
@@ -982,13 +1106,18 @@ function checkMatchEndCondition() {
 function finishMatch(winner) {
   if (gameState === 'result') return;
   gameState = 'result';
+  sfx.stopBgm();
   sfx.win();
 
   const titleEl = document.getElementById('result-title');
   const subEl = document.getElementById('result-subtitle');
   const listEl = document.getElementById('leaderboard-list');
 
-  titleEl.textContent = winner ? `🏆 冠軍：${winner.name}！` : '🏁 回合結束！';
+  if (players.size === 1 && localPlayer) {
+    titleEl.textContent = `⚡ 單人挑戰結束！抵達 B${String(localPlayer.maxFloor).padStart(3, '0')} 層！`;
+  } else {
+    titleEl.textContent = winner ? `🏆 冠軍：${winner.name}！` : '🏁 回合結束！';
+  }
 
   const sorted = Array.from(players.values()).sort((a, b) => {
     const rankA = a.isGhost ? a.survivalOrder : 1;
@@ -1016,6 +1145,7 @@ function finishMatch(winner) {
 }
 
 document.getElementById('btn-back-lobby').addEventListener('click', () => {
+  sfx.stopBgm();
   sfx.customizePop();
   gameState = 'lobby';
   world.root.visible = false;
@@ -1028,18 +1158,17 @@ document.getElementById('btn-back-lobby').addEventListener('click', () => {
 function updateBotInput(bot, dt) {
   bot.botThinkTimer -= dt;
   if (bot.botThinkTimer <= 0) {
-    bot.botThinkTimer = 0.28 + Math.random() * 0.25;
+    bot.botThinkTimer = 0.18 + Math.random() * 0.18;
 
-    // Look for a safe platform below or near current Y
     let bestPlat = null;
     let bestScore = Infinity;
     for (const [, plat] of world.platforms.entries()) {
       if (plat.isBroken) continue;
       const dy = bot.y - plat.y;
-      if (dy >= -0.8 && dy < 7.5) {
+      if (dy >= -0.6 && dy < 6.8) {
         const dist = Math.hypot(plat.x - bot.x, plat.z - bot.z);
         const hazardPenalty = plat.type === 'spike' ? 4.5 : plat.type === 'lava' ? 2.5 : 0;
-        const score = dist + hazardPenalty;
+        const score = dist + hazardPenalty - dy * 0.35;
         if (score < bestScore) {
           bestScore = score;
           bestPlat = plat;
@@ -1048,10 +1177,9 @@ function updateBotInput(bot, dt) {
     }
 
     if (bestPlat) {
-      // If currently standing on a platform and ceiling is close, intentionally walk off the edge to drop down!
       const ceilingDist = world.ceilingY - bot.y;
-      if (bot.isGrounded && ceilingDist < 5.2) {
-        bot.botTargetX = bestPlat.x + (bestPlat.x > 0 ? -bestPlat.w * 0.68 : bestPlat.w * 0.68);
+      if (bot.isGrounded && ceilingDist < 6.0) {
+        bot.botTargetX = bestPlat.x + (bestPlat.x > 0 ? -bestPlat.w * 0.72 : bestPlat.w * 0.72);
         bot.botTargetZ = bestPlat.z;
       } else {
         bot.botTargetX = bestPlat.x + (Math.random() - 0.5) * (bestPlat.w * 0.5);
@@ -1059,14 +1187,13 @@ function updateBotInput(bot, dt) {
       }
     }
 
-    // Bots also use items & shove nearby players!
-    if (bot.heldItem && Math.random() < 0.45) {
+    if (bot.heldItem && Math.random() < 0.5) {
       useHeldItem(bot);
     }
     players.forEach((other) => {
       if (other.id !== bot.id && !other.isGhost) {
         const d = Math.hypot(other.x - bot.x, other.z - bot.z);
-        if (d < 1.8 && Math.abs(other.y - bot.y) < 1.2 && Math.random() < 0.35) {
+        if (d < 1.9 && Math.abs(other.y - bot.y) < 1.2 && Math.random() < 0.4) {
           performShove(bot);
         }
       }
@@ -1076,27 +1203,25 @@ function updateBotInput(bot, dt) {
   const dx = bot.botTargetX - bot.x;
   const dz = bot.botTargetZ - bot.z;
   const len = Math.hypot(dx, dz);
-  if (len > 0.25) {
+  if (len > 0.2) {
     return { mx: dx / len, mz: dz / len };
   }
   return { mx: 0, mz: 0 };
 }
 
 function updatePlayerPhysics(p, dt) {
-  const isSimulatedLocally = p.isLocal || (network.isHost && p.isBot);
+  const isSimulatedLocally = p.isLocal || (network.isHost && p.isBot) || (isSoloSession && p.isBot);
 
   if (!isSimulatedLocally) {
-    // Smooth interpolation for remote multiplayer peers
-    p.x += (p.targetX - p.x) * Math.min(1, dt * 14);
-    p.y += (p.targetY - p.y) * Math.min(1, dt * 14);
-    p.z += (p.targetZ - p.z) * Math.min(1, dt * 14);
+    p.x += (p.targetX - p.x) * Math.min(1, dt * 16);
+    p.y += (p.targetY - p.y) * Math.min(1, dt * 16);
+    p.z += (p.targetZ - p.z) * Math.min(1, dt * 16);
     p.avatar.group.position.set(p.x, p.y, p.z);
     p.avatar.group.rotation.y = p.rotY;
     p.avatar.animate(dt, Math.hypot(p.vx, p.vz) > 0.4, true);
     return;
   }
 
-  // Movement Input
   let mx = 0;
   let mz = 0;
   if (p.isLocal) {
@@ -1117,13 +1242,11 @@ function updatePlayerPhysics(p, dt) {
     mz = bIn.mz;
   }
 
-  // Ghost free-flight mode
   if (p.isGhost) {
     if (p.isLocal) {
-      p.x += mx * 8.5 * dt;
-      p.z += mz * 8.5 * dt;
-      // Keep ghost vertically near the active survivors
-      let avgY = world.ceilingY - 6;
+      p.x += mx * 10.5 * dt;
+      p.z += mz * 10.5 * dt;
+      let avgY = world.ceilingY - 5.5;
       let cnt = 0;
       players.forEach((other) => {
         if (!other.isGhost) {
@@ -1131,8 +1254,8 @@ function updatePlayerPhysics(p, dt) {
           cnt++;
         }
       });
-      if (cnt > 0) avgY = (avgY - (world.ceilingY - 6)) / cnt;
-      p.y += (avgY + 1.2 - p.y) * dt * 2.5;
+      if (cnt > 0) avgY = (avgY - (world.ceilingY - 5.5)) / cnt;
+      p.y += (avgY + 1.2 - p.y) * dt * 3.0;
     }
     p.x = Math.max(-7.8, Math.min(7.8, p.x));
     p.z = Math.max(-3.8, Math.min(3.8, p.z));
@@ -1141,20 +1264,19 @@ function updatePlayerPhysics(p, dt) {
     return;
   }
 
-  // Frozen check
   if (p.avatar.frozenTimer > 0) {
     mx = 0;
     mz = 0;
   }
 
-  // Check current platform surface properties (ice, conveyor)
+  // Fast, snappy arcade movement!
   let currentPlat = world.platforms.get(p.currentPlatformKey);
   const onIce = p.isGrounded && currentPlat && currentPlat.type === 'ice';
-  const moveSpeed = 6.8;
-  const accel = onIce ? 2.6 : 14.0;
-  const friction = onIce ? 0.985 : 0.82;
+  const moveSpeed = 8.8;
+  const accel = onIce ? 3.2 : 18.5;
+  const friction = onIce ? 0.985 : 0.78;
 
-  if (Math.hypot(mx, mz) > 0.05) {
+  if (Math.hypot(mx, mz) > 0.04) {
     p.vx += (mx * moveSpeed - p.vx) * Math.min(1, accel * dt);
     p.vz += (mz * moveSpeed - p.vz) * Math.min(1, accel * dt);
     p.rotY = Math.atan2(mx, mz);
@@ -1163,45 +1285,40 @@ function updatePlayerPhysics(p, dt) {
     p.vz *= Math.pow(friction, dt * 60);
   }
 
-  // Conveyor belt push
   if (p.isGrounded && currentPlat) {
     if (currentPlat.type === 'conveyor_left' || currentPlat.type === 'conveyor_right') {
       const dir = (currentPlat.type === 'conveyor_right' ? 1 : -1) * (world.conveyorReversed ? -1 : 1);
-      p.x += dir * 3.4 * dt;
+      p.x += dir * 5.0 * dt;
     }
   }
 
-  // Gravity
+  // Crisp fast gravity
   const prevY = p.y;
-  p.vy -= 23.5 * dt;
-  p.vy = Math.max(-19.5, p.vy);
+  p.vy -= 31.5 * dt;
+  p.vy = Math.max(-23.5, p.vy);
 
   p.x += p.vx * dt;
   p.y += p.vy * dt;
   p.z += p.vz * dt;
 
-  // Keep within 3D Shaft walls
   p.x = Math.max(-8.2, Math.min(8.2, p.x));
   p.z = Math.max(-4.1, Math.min(4.1, p.z));
 
-  // Platform Landing & Projection Scan
   p.isGrounded = false;
   let highestGroundBelow = null;
 
   for (const [key, plat] of world.platforms.entries()) {
     if (plat.isBroken) continue;
-    const halfW = plat.w * 0.5 + 0.26;
-    const halfD = plat.d * 0.5 + 0.26;
+    const halfW = plat.w * 0.5 + 0.28;
+    const halfD = plat.d * 0.5 + 0.28;
 
     if (Math.abs(p.x - plat.x) <= halfW && Math.abs(p.z - plat.z) <= halfD) {
-      const topY = plat.y + 0.28;
-      // Track highest platform below feet for the mobile laser landing ring
-      if (topY <= prevY + 0.3 && (highestGroundBelow === null || topY > highestGroundBelow)) {
+      const topY = plat.y + 0.26;
+      if (topY <= prevY + 0.35 && (highestGroundBelow === null || topY > highestGroundBelow)) {
         highestGroundBelow = topY;
       }
 
-      // Swept landing check
-      if (p.vy <= 0 && prevY >= topY - 0.18 && p.y <= topY + 0.16) {
+      if (p.vy <= 0 && prevY >= topY - 0.22 && p.y <= topY + 0.18) {
         p.y = topY;
         p.vy = 0;
         p.isGrounded = true;
@@ -1210,10 +1327,13 @@ function updatePlayerPhysics(p, dt) {
 
         if (plat.floorIndex > p.maxFloor) {
           p.maxFloor = plat.floorIndex;
-          if (p.isLocal) updateHudUI();
+          if (p.isLocal) {
+            floorCombo++;
+            floorComboTimer = 2.4;
+            updateHudUI();
+          }
         }
 
-        // Handle Landing Platform Traps!
         handlePlatformLanding(p, plat);
         break;
       }
@@ -1222,35 +1342,33 @@ function updatePlayerPhysics(p, dt) {
 
   p.avatar.updateLandingProjection(highestGroundBelow);
 
-  // Continuous Lava & Catapult platform effects while standing
   if (p.isGrounded && currentPlat && !currentPlat.isBroken) {
     if (currentPlat.type === 'lava') {
       p.lavaStandTimer += dt;
-      if (p.lavaStandTimer > 0.75) {
+      if (p.lavaStandTimer > 0.55) {
         p.lavaStandTimer = 0;
-        p.vy = 8.4;
+        p.vy = 9.5;
         p.isGrounded = false;
         if (p.isLocal) sfx.stepLava();
         damagePlayer(p, 2, `🔥 ${p.name} 被熔岩踏板燙死！`);
       }
     } else if (currentPlat.type === 'catapult') {
       currentPlat.catapultCharge += dt;
-      if (currentPlat.catapultCharge > 0.55) {
+      if (currentPlat.catapultCharge > 0.42) {
         currentPlat.catapultCharge = 0;
         const randAng = Math.random() * Math.PI * 2;
-        p.vx = Math.cos(randAng) * 14.0;
-        p.vz = Math.sin(randAng) * 14.0;
-        p.vy = 7.5;
+        p.vx = Math.cos(randAng) * 15.5;
+        p.vz = Math.sin(randAng) * 15.5;
+        p.vy = 8.2;
         p.isGrounded = false;
         if (p.isLocal) sfx.stepCatapult();
       }
     }
 
-    // Item Box Pickup
     if (currentPlat.hasItemBox && currentPlat.itemBoxMesh) {
       const boxWorldX = currentPlat.x + currentPlat.itemBoxMesh.position.x;
       const boxWorldZ = currentPlat.z + currentPlat.itemBoxMesh.position.z;
-      if (Math.hypot(p.x - boxWorldX, p.z - boxWorldZ) < 1.05) {
+      if (Math.hypot(p.x - boxWorldX, p.z - boxWorldZ) < 1.1) {
         currentPlat.hasItemBox = false;
         currentPlat.itemBoxMesh.visible = false;
         const itemKeys = Object.keys(ITEM_META);
@@ -1265,10 +1383,9 @@ function updatePlayerPhysics(p, dt) {
       }
     }
 
-    // Field Sabotage Switch Trigger
     if (currentPlat.switchType && currentPlat.switchCooldown <= 0) {
-      if (Math.hypot(p.x - currentPlat.x, p.z - currentPlat.z) < 0.95) {
-        currentPlat.switchCooldown = 8.0;
+      if (Math.hypot(p.x - currentPlat.x, p.z - currentPlat.z) < 1.0) {
+        currentPlat.switchCooldown = 7.0;
         activateFieldSwitch(p, currentPlat.switchType);
         network.sendAction('trigger_switch', { switchType: currentPlat.switchType });
       }
@@ -1277,31 +1394,29 @@ function updatePlayerPhysics(p, dt) {
     p.lavaStandTimer = 0;
   }
 
-  // Dropped Banana Hazard Check
   for (let i = world.bananas.length - 1; i >= 0; i--) {
     const b = world.bananas[i];
-    if (performance.now() - b.createdAt < 450 && b.ownerId === p.id) continue;
-    if (Math.hypot(p.x - b.x, p.z - b.z) < 0.85 && Math.abs(p.y - b.y) < 1.0) {
+    if (performance.now() - b.createdAt < 400 && b.ownerId === p.id) continue;
+    if (Math.hypot(p.x - b.x, p.z - b.z) < 0.88 && Math.abs(p.y - b.y) < 1.0) {
       world.root.remove(b.mesh);
       world.bananas.splice(i, 1);
       sfx.bananaSlip();
       const slipAngle = Math.random() * Math.PI * 2;
-      p.vx = Math.cos(slipAngle) * 14.5;
-      p.vz = Math.sin(slipAngle) * 14.5;
-      p.vy = 6.0;
+      p.vx = Math.cos(slipAngle) * 15.5;
+      p.vz = Math.sin(slipAngle) * 15.5;
+      p.vy = 6.5;
       p.isGrounded = false;
       p.lastAttackerId = b.ownerId;
       addEventFeed(`🍌 ${p.name} 踩到香蕉皮大滑倒！`);
     }
   }
 
-  // Falling Rock Hazard Check
   for (let i = world.rocks.length - 1; i >= 0; i--) {
     const r = world.rocks[i];
     if (Math.hypot(p.x - r.x, p.z - r.z) < 1.05 && Math.abs(p.y + 0.8 - r.y) < 1.2) {
       sfx.explosion();
-      p.vy = -8.0;
-      p.vx += (Math.random() - 0.5) * 10;
+      p.vy = -9.0;
+      p.vx += (Math.random() - 0.5) * 12;
       damagePlayer(p, 3, `☄️ ${p.name} 被天降落石砸入深淵！`);
       world.root.remove(r.mesh);
       world.root.remove(r.warningLine);
@@ -1309,7 +1424,6 @@ function updatePlayerPhysics(p, dt) {
     }
   }
 
-  // Time Bomb Countdown & Passing by Body Collision
   if (p.hasBomb) {
     p.bombPassImmunity = Math.max(0, p.bombPassImmunity - dt);
     p.bombTimer -= dt;
@@ -1317,15 +1431,14 @@ function updatePlayerPhysics(p, dt) {
     if (p.bombPassImmunity <= 0) {
       players.forEach((other) => {
         if (other.id !== p.id && !other.isGhost && !other.hasBomb) {
-          if (Math.hypot(other.x - p.x, other.z - p.z) < 1.05 && Math.abs(other.y - p.y) < 1.4) {
-            // Pass the bomb!
+          if (Math.hypot(other.x - p.x, other.z - p.z) < 1.08 && Math.abs(other.y - p.y) < 1.4) {
             p.hasBomb = false;
             p.avatar.hasBomb = false;
             p.avatar.refreshOverheadLabel();
 
             other.hasBomb = true;
-            other.bombTimer = Math.max(1.8, p.bombTimer);
-            other.bombPassImmunity = 0.75;
+            other.bombTimer = Math.max(1.6, p.bombTimer);
+            other.bombPassImmunity = 0.7;
             other.avatar.hasBomb = true;
             other.avatar.refreshOverheadLabel();
             sfx.switchTrigger();
@@ -1340,13 +1453,12 @@ function updatePlayerPhysics(p, dt) {
       p.avatar.hasBomb = false;
       p.avatar.refreshOverheadLabel();
       sfx.explosion();
-      p.vy = 8.5;
+      p.vy = 9.5;
       p.vx = (Math.random() - 0.5) * 16;
       damagePlayer(p, 4, `💥 ${p.name} 被定時炸彈炸飛淘汰！`);
     }
   }
 
-  // PvP Body Collision & Head Stomp Check!
   players.forEach((other) => {
     if (other.id === p.id || other.isGhost) return;
     const dx = p.x - other.x;
@@ -1354,21 +1466,19 @@ function updatePlayerPhysics(p, dt) {
     const distXZ = Math.hypot(dx, dz);
     const dy = p.y - other.y;
 
-    // 1. Head Stomp (falling onto another player's head!)
-    if (p.vy < -1.0 && distXZ < 0.92 && dy >= 0.85 && dy <= 1.85) {
-      p.vy = 10.6; // Bounce high up!
+    if (p.vy < -1.0 && distXZ < 0.95 && dy >= 0.82 && dy <= 1.9) {
+      p.vy = 11.5;
       p.isGrounded = false;
       p.kills++;
 
       other.avatar.squishTimer = 0.6;
-      other.vy = -9.0; // Smash victim downward!
+      other.vy = -10.5;
       other.lastAttackerId = p.id;
+      if (p.isLocal || other.isLocal) screenShakeTimer = 0.18;
       sfx.stompHead();
       addEventFeed(`👟 ${p.name} 踩扁了 ${other.name} 的頭二段跳！`);
       damagePlayer(other, 1, `👟 ${other.name} 被 ${p.name} 一腳踩進深淵！`);
-    }
-    // 2. Horizontal Body Bump
-    else if (distXZ < 0.78 && distXZ > 0.001 && Math.abs(dy) < 1.1) {
+    } else if (distXZ < 0.78 && distXZ > 0.001 && Math.abs(dy) < 1.1) {
       const push = (0.78 - distXZ) * 0.55;
       const nx = dx / distXZ;
       const nz = dz / distXZ;
@@ -1379,17 +1489,15 @@ function updatePlayerPhysics(p, dt) {
     }
   });
 
-  // Spiked Ceiling Collision Check
   if (p.y + 1.65 >= world.ceilingY - 0.4) {
     p.y = world.ceilingY - 2.2;
-    p.vy = -7.5;
+    p.vy = -9.0;
     p.isGrounded = false;
     if (p.isLocal) sfx.stepSpike();
     damagePlayer(p, 4, `⚙️ ${p.name} 被頭頂尖刺天花板刺穿淘汰！`);
   }
 
-  // Deep Abyss Fall Elimination Check
-  if (p.y < world.ceilingY - 23.5) {
+  if (p.y < world.ceilingY - 21.5) {
     eliminatePlayer(p, `🕳️ ${p.name} 墜入無底深淵淘汰！`);
   }
 
@@ -1410,19 +1518,19 @@ function handlePlatformLanding(p, plat) {
       }
       if (p.isLocal) {
         if (plat.type === 'ice') sfx.stepIce();
-        else sfx.stepNormal();
+        else sfx.stepNormal(floorCombo);
       }
     }
   } else if (plat.type === 'spike') {
     if (p.lastHealedFloor !== plat.floorIndex) {
       p.lastHealedFloor = plat.floorIndex;
-      p.vy = 4.6;
+      p.vy = 5.4;
       p.isGrounded = false;
       if (p.isLocal) sfx.stepSpike();
       damagePlayer(p, 3, `🩸 ${p.name} 踩上尖刺釘板陣亡！`);
     }
   } else if (plat.type === 'spring') {
-    p.vy = 13.2;
+    p.vy = 14.5;
     p.isGrounded = false;
     if (p.isLocal) sfx.stepSpring();
   } else if (plat.type === 'cracked') {
@@ -1443,13 +1551,27 @@ function animate(now) {
 
   if (gameState === 'lobby') {
     if (!isDraggingPreview) {
-      lobbyAvatar.group.rotation.y += dt * 0.55;
+      lobbyAvatar.group.rotation.y += dt * 0.6;
     }
     lobbyAvatar.animate(dt, false, true);
-    camera.position.set(0, 1.45, 3.85);
-    camera.lookAt(0, 1.05, 0);
+    // Position camera so the character + pedestal sits cleanly inside the top showcase window!
+    camera.position.set(0, 1.15, 3.65);
+    camera.lookAt(0, 0.98, 0);
   } else if (gameState === 'playing') {
-    // Cooldown UI timers
+    // Combo decay
+    if (floorComboTimer > 0) {
+      floorComboTimer -= dt;
+      if (floorComboTimer <= 0) {
+        floorCombo = 0;
+        updateHudUI();
+      }
+    }
+
+    // Dynamic BGM tempo scales with depth & speed boost!
+    const depthFactor = localPlayer ? 1.0 + Math.min(0.55, localPlayer.maxFloor * 0.012) : 1.0;
+    const boostFactor = world.speedBoostTimer > 0 ? 1.25 : 1.0;
+    sfx.setBgmIntensity(depthFactor * boostFactor);
+
     if (shoveCooldown > 0) {
       shoveCooldown = Math.max(0, shoveCooldown - dt);
       document.getElementById('shove-cd-text').textContent =
@@ -1466,7 +1588,6 @@ function animate(now) {
         ghostRockCooldown > 0 ? `${ghostRockCooldown.toFixed(1)}s` : '就緒';
     }
 
-    // Find lowest player Y to ensure floors are generated ahead
     let lowestY = world.ceilingY - 10;
     players.forEach((p) => {
       if (!p.isGhost && p.y < lowestY) lowestY = p.y;
@@ -1478,7 +1599,6 @@ function animate(now) {
       updatePlayerPhysics(p, dt);
     });
 
-    // Update ceiling warning pill
     if (localPlayer && !localPlayer.isGhost) {
       const ceilDist = Math.max(0, world.ceilingY - (localPlayer.y + 1.6));
       const warnEl = document.getElementById('hud-ceiling-warn');
@@ -1487,23 +1607,27 @@ function animate(now) {
         : `⚙️ 尖刺距離 ${ceilDist.toFixed(1)}m`;
     }
 
-    // Smart 3D Party Camera (frames ceiling above + platforms below clearly on mobile)
+    // Fast-tracking 3D Party Camera + Screen Shake
     if (localPlayer) {
       const targetCamX = localPlayer.x * 0.38;
-      const targetCamY = cameraCloseMode ? localPlayer.y + 3.2 : localPlayer.y + 3.8;
-      const targetCamZ = cameraCloseMode ? 11.2 : 15.2;
+      const targetCamY = cameraCloseMode ? localPlayer.y + 2.8 : localPlayer.y + 3.4;
+      const targetCamZ = cameraCloseMode ? 10.6 : 14.2;
 
-      camera.position.x += (targetCamX - camera.position.x) * Math.min(1, dt * 6);
-      camera.position.y += (targetCamY - camera.position.y) * Math.min(1, dt * 7);
-      camera.position.z += (targetCamZ - camera.position.z) * Math.min(1, dt * 6);
+      camera.position.x += (targetCamX - camera.position.x) * Math.min(1, dt * 10);
+      camera.position.y += (targetCamY - camera.position.y) * Math.min(1, dt * 12);
+      camera.position.z += (targetCamZ - camera.position.z) * Math.min(1, dt * 10);
 
-      // Look slightly below the player so upcoming platforms are always visible on phone screens
-      camera.lookAt(localPlayer.x * 0.25, localPlayer.y - 2.2, 0);
+      if (screenShakeTimer > 0) {
+        screenShakeTimer = Math.max(0, screenShakeTimer - dt);
+        camera.position.x += (Math.random() - 0.5) * 0.42;
+        camera.position.y += (Math.random() - 0.5) * 0.42;
+      }
+
+      camera.lookAt(localPlayer.x * 0.25, localPlayer.y - 2.1, 0);
     }
 
-    // Broadcast state over PeerJS at ~20Hz
     netSyncAccumulator += dt;
-    if (netSyncAccumulator >= 0.05 && localPlayer) {
+    if (netSyncAccumulator >= 0.05 && localPlayer && !isSoloSession) {
       netSyncAccumulator = 0;
       network.sendState({
         x: localPlayer.x,
@@ -1528,7 +1652,6 @@ function animate(now) {
 requestAnimationFrame(animate);
 
 window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
+  updateCameraProjection();
 });

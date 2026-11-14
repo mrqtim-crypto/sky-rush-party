@@ -29,7 +29,8 @@ export const PLATFORM_TYPES = {
   catapult: { label: '狂暴彈射板', color: 0x9333ea, edge: 0xc084fc }
 };
 
-export const FLOOR_VERTICAL_GAP = 3.4;
+// Tighter vertical gap for fast-paced arcade action!
+export const FLOOR_VERTICAL_GAP = 2.55;
 
 export class AbyssWorld {
   constructor(scene) {
@@ -37,13 +38,13 @@ export class AbyssWorld {
     this.root = new THREE.Group();
     this.scene.add(this.root);
 
-    this.platforms = new Map(); // floorIndex -> platformObj
-    this.bananas = []; // { id, mesh, x, y, z, floorIndex }
-    this.rocks = []; // { mesh, warningLine, x, y, z, vy }
+    this.platforms = new Map();
+    this.bananas = [];
+    this.rocks = [];
     this.maxGeneratedFloor = 0;
     this.rng = new SeededRandom(101010);
 
-    this.ceilingY = 5.5;
+    this.ceilingY = 4.5;
     this.conveyorReversed = false;
     this.speedBoostTimer = 0;
 
@@ -55,7 +56,6 @@ export class AbyssWorld {
     this.envGroup = new THREE.Group();
     this.root.add(this.envGroup);
 
-    // Neon Abyss Back & Side Grid Pillars that follow camera depth
     this.wallRingGroup = new THREE.Group();
     this.root.add(this.wallRingGroup);
 
@@ -87,15 +87,11 @@ export class AbyssWorld {
       this.wallRingGroup.add(strip);
     });
 
-    // Horizontal neon depth rings along the shaft
     this.depthRings = [];
-    const ringMat = new THREE.MeshBasicMaterial({
-      color: 0x1e293b,
-      wireframe: false
-    });
-    for (let i = 0; i < 16; i++) {
+    const ringMat = new THREE.MeshBasicMaterial({ color: 0x1e293b });
+    for (let i = 0; i < 18; i++) {
       const backBar = new THREE.Mesh(new THREE.BoxGeometry(19.2, 0.18, 0.18), ringMat);
-      backBar.position.set(0, -i * 6, -5.2);
+      backBar.position.set(0, -i * 5, -5.2);
       this.wallRingGroup.add(backBar);
       this.depthRings.push(backBar);
     }
@@ -104,7 +100,6 @@ export class AbyssWorld {
   buildSpikedCeiling() {
     this.ceilingGroup = new THREE.Group();
 
-    // Heavy industrial blood-red beam
     const baseGeo = new THREE.BoxGeometry(19.0, 1.2, 9.6);
     const baseMat = new THREE.MeshStandardMaterial({
       color: 0x7f1d1d,
@@ -115,7 +110,6 @@ export class AbyssWorld {
     baseMesh.position.y = 0.6;
     this.ceilingGroup.add(baseMesh);
 
-    // Hazard yellow/red stripe bar
     const hazardBar = new THREE.Mesh(
       new THREE.BoxGeometry(19.1, 0.28, 9.7),
       new THREE.MeshBasicMaterial({ color: 0xef4444 })
@@ -123,7 +117,6 @@ export class AbyssWorld {
     hazardBar.position.y = 0.08;
     this.ceilingGroup.add(hazardBar);
 
-    // Menacing 3D metallic spikes pointing down
     const spikeGeo = new THREE.ConeGeometry(0.45, 1.25, 6);
     spikeGeo.rotateX(Math.PI);
     const spikeMat = new THREE.MeshStandardMaterial({
@@ -146,11 +139,9 @@ export class AbyssWorld {
     this.root.add(this.ceilingGroup);
   }
 
-  resetWorld(seed = 101010, themeId = 'neon_abyss') {
+  resetWorld(seed = 101010) {
     this.rng = new SeededRandom(seed);
-    this.themeId = themeId;
 
-    // Clear existing platforms
     this.platforms.forEach((p) => {
       this.root.remove(p.group);
     });
@@ -166,13 +157,12 @@ export class AbyssWorld {
     this.rocks = [];
 
     this.maxGeneratedFloor = 0;
-    this.ceilingY = 6.0;
+    this.ceilingY = 4.2;
     this.ceilingGroup.position.y = this.ceilingY;
     this.conveyorReversed = false;
     this.speedBoostTimer = 0;
 
-    // Pre-generate initial 32 floors
-    this.ensureFloorsUpTo(32);
+    this.ensureFloorsUpTo(36);
   }
 
   ensureFloorsUpTo(targetFloor) {
@@ -185,15 +175,14 @@ export class AbyssWorld {
   pickPlatformType(floorIndex) {
     if (floorIndex <= 2) return 'normal';
     const r = this.rng.next();
-    // Gradually increase trap density as players go deeper!
-    const difficulty = Math.min(1, floorIndex / 45);
-    if (r < 0.30 - difficulty * 0.08) return 'normal';
-    if (r < 0.43) return 'spike';
-    if (r < 0.55) return 'spring';
-    if (r < 0.67) return 'cracked';
-    if (r < 0.76) return this.rng.next() < 0.5 ? 'conveyor_left' : 'conveyor_right';
-    if (r < 0.84) return 'ice';
-    if (r < 0.92) return 'lava';
+    const difficulty = Math.min(1, floorIndex / 35);
+    if (r < 0.28 - difficulty * 0.07) return 'normal';
+    if (r < 0.41) return 'spike';
+    if (r < 0.53) return 'spring';
+    if (r < 0.66) return 'cracked';
+    if (r < 0.77) return this.rng.next() < 0.5 ? 'conveyor_left' : 'conveyor_right';
+    if (r < 0.85) return 'ice';
+    if (r < 0.93) return 'lava';
     return 'catapult';
   }
 
@@ -202,25 +191,24 @@ export class AbyssWorld {
 
     let x = 0;
     let z = 0;
-    let w = 4.6;
-    let d = 3.0;
+    let w = 4.5;
+    let d = 2.9;
 
     if (floorIndex === 1) {
-      // Starting wide platform for all players to land safely
       x = 0;
       z = 0;
-      w = 9.2;
-      d = 4.4;
+      w = 8.8;
+      d = 4.2;
     } else if (floorIndex === 2) {
       x = this.rng.range(-3.2, 3.2);
       z = this.rng.range(-1.2, 1.2);
-      w = 6.0;
-      d = 3.4;
+      w = 5.6;
+      d = 3.2;
     } else {
       x = this.rng.range(-5.8, 5.8);
       z = this.rng.range(-2.3, 2.3);
-      w = this.rng.range(3.8, 5.4);
-      d = this.rng.range(2.6, 3.4);
+      w = this.rng.range(3.6, 5.1);
+      d = this.rng.range(2.5, 3.3);
     }
 
     const type = this.pickPlatformType(floorIndex);
@@ -229,8 +217,7 @@ export class AbyssWorld {
 
     const pMeta = PLATFORM_TYPES[type] || PLATFORM_TYPES.normal;
 
-    // Platform main block
-    const boxGeo = new THREE.BoxGeometry(w, 0.52, d);
+    const boxGeo = new THREE.BoxGeometry(w, 0.48, d);
     const boxMat = new THREE.MeshStandardMaterial({
       color: pMeta.color,
       roughness: type === 'ice' ? 0.12 : 0.45,
@@ -241,46 +228,41 @@ export class AbyssWorld {
     const baseMesh = new THREE.Mesh(boxGeo, boxMat);
     group.add(baseMesh);
 
-    // Bright edge trim for mobile visibility
     const trimGeo = new THREE.BoxGeometry(w + 0.1, 0.14, d + 0.1);
     const trimMat = new THREE.MeshBasicMaterial({ color: pMeta.edge });
     const trimMesh = new THREE.Mesh(trimGeo, trimMat);
-    trimMesh.position.y = 0.2;
+    trimMesh.position.y = 0.19;
     group.add(trimMesh);
 
-    // Trap-specific visual attachments
     this.addPlatformVisuals(group, type, w, d);
 
-    // Every 5 floors, display a 3D Floor Milestone Sign on the back wall
     if (floorIndex % 5 === 0) {
       const sign = this.createFloorSignSprite(floorIndex);
-      sign.position.set(0, 1.35, -d * 0.5 - 0.3);
+      sign.position.set(0, 1.25, -d * 0.5 - 0.3);
       group.add(sign);
     }
 
-    // Spawn Item Box (~30% chance on floors >= 2)
     let itemBoxMesh = null;
     let hasItemBox = false;
-    if (floorIndex >= 2 && this.rng.next() < 0.34) {
+    if (floorIndex >= 2 && this.rng.next() < 0.36) {
       hasItemBox = true;
       itemBoxMesh = this.createItemBoxMesh();
-      itemBoxMesh.position.set(this.rng.range(-w * 0.25, w * 0.25), 0.95, 0);
+      itemBoxMesh.position.set(this.rng.range(-w * 0.25, w * 0.25), 0.9, 0);
       group.add(itemBoxMesh);
     }
 
-    // Spawn Field Sabotage Switch (~18% chance on floors >= 3, on normal/conveyor/ice)
     let switchType = null;
     let switchMesh = null;
-    if (floorIndex >= 3 && !hasItemBox && this.rng.next() < 0.22) {
+    if (floorIndex >= 3 && !hasItemBox && this.rng.next() < 0.24) {
       switchType = this.rng.pick(['speed_up', 'reverse_belt', 'rockfall']);
       switchMesh = this.createSwitchMesh(switchType);
-      switchMesh.position.set(0, 0.42, 0);
+      switchMesh.position.set(0, 0.4, 0);
       group.add(switchMesh);
     }
 
     this.root.add(group);
 
-    const platformObj = {
+    this.platforms.set(floorIndex, {
       floorIndex,
       type,
       x,
@@ -299,26 +281,23 @@ export class AbyssWorld {
       crackedTimer: 0,
       isBroken: false,
       brokenRespawnTimer: 0,
-      catapultCharge: 0,
-      springCompression: 0
-    };
+      catapultCharge: 0
+    });
 
-    this.platforms.set(floorIndex, platformObj);
-
-    // Also occasionally spawn a secondary side platform on the same floor so players have choices & PvP jumping!
-    if (floorIndex >= 3 && this.rng.next() < 0.42) {
-      const sideX = x > 0 ? this.rng.range(-6.2, -2.2) : this.rng.range(2.2, 6.2);
+    // Secondary staggered platform for high-speed route choices!
+    if (floorIndex >= 2 && this.rng.next() < 0.62) {
+      const sideX = x > 0 ? this.rng.range(-6.2, -2.0) : this.rng.range(2.0, 6.2);
       const sideZ = this.rng.range(-2.2, 2.2);
       const sideType = this.pickPlatformType(floorIndex + 1);
-      const sideW = 3.4;
+      const sideW = 3.5;
       const sideD = 2.5;
       const sideKey = floorIndex + 0.5;
 
       const sGroup = new THREE.Group();
-      sGroup.position.set(sideX, y - 0.6, sideZ);
+      sGroup.position.set(sideX, y - 0.85, sideZ);
       const sMeta = PLATFORM_TYPES[sideType] || PLATFORM_TYPES.normal;
       const sBase = new THREE.Mesh(
-        new THREE.BoxGeometry(sideW, 0.48, sideD),
+        new THREE.BoxGeometry(sideW, 0.46, sideD),
         new THREE.MeshStandardMaterial({ color: sMeta.color, roughness: 0.45 })
       );
       const sTrim = new THREE.Mesh(
@@ -331,10 +310,10 @@ export class AbyssWorld {
 
       let sItemMesh = null;
       let sHasItem = false;
-      if (this.rng.next() < 0.45) {
+      if (this.rng.next() < 0.42) {
         sHasItem = true;
         sItemMesh = this.createItemBoxMesh();
-        sItemMesh.position.set(0, 0.95, 0);
+        sItemMesh.position.set(0, 0.9, 0);
         sGroup.add(sItemMesh);
       }
 
@@ -343,7 +322,7 @@ export class AbyssWorld {
         floorIndex,
         type: sideType,
         x: sideX,
-        y: y - 0.6,
+        y: y - 0.85,
         z: sideZ,
         w: sideW,
         d: sideD,
@@ -358,8 +337,7 @@ export class AbyssWorld {
         crackedTimer: 0,
         isBroken: false,
         brokenRespawnTimer: 0,
-        catapultCharge: 0,
-        springCompression: 0
+        catapultCharge: 0
       });
     }
   }
@@ -371,7 +349,7 @@ export class AbyssWorld {
       for (let sx = -w * 0.38; sx <= w * 0.38; sx += 0.65) {
         for (let sz = -d * 0.32; sz <= d * 0.32; sz += 0.65) {
           const sp = new THREE.Mesh(spikeGeo, spikeMat);
-          sp.position.set(sx, 0.52, sz);
+          sp.position.set(sx, 0.5, sz);
           group.add(sp);
         }
       }
@@ -379,14 +357,14 @@ export class AbyssWorld {
       const padGeo = new THREE.CylinderGeometry(w * 0.34, w * 0.38, 0.25, 16);
       const padMat = new THREE.MeshStandardMaterial({ color: 0xfef08a, emissive: 0xca8a04, emissiveIntensity: 0.3 });
       const pad = new THREE.Mesh(padGeo, padMat);
-      pad.position.y = 0.38;
+      pad.position.y = 0.36;
       group.add(pad);
     } else if (type === 'conveyor_left' || type === 'conveyor_right') {
       const arrowMat = new THREE.MeshBasicMaterial({ color: 0xfef08a });
       for (let i = -1; i <= 1; i++) {
         const cone = new THREE.Mesh(new THREE.ConeGeometry(0.24, 0.45, 3), arrowMat);
         cone.rotation.z = type === 'conveyor_left' ? Math.PI / 2 : -Math.PI / 2;
-        cone.position.set(i * 1.0, 0.32, 0);
+        cone.position.set(i * 1.0, 0.3, 0);
         group.add(cone);
       }
     } else if (type === 'lava') {
@@ -394,7 +372,7 @@ export class AbyssWorld {
         new THREE.BoxGeometry(w * 0.9, 0.12, d * 0.85),
         new THREE.MeshBasicMaterial({ color: 0xfacc15 })
       );
-      lavaTop.position.y = 0.26;
+      lavaTop.position.y = 0.25;
       group.add(lavaTop);
     } else if (type === 'catapult') {
       const ring = new THREE.Mesh(
@@ -402,7 +380,7 @@ export class AbyssWorld {
         new THREE.MeshBasicMaterial({ color: 0xf0abfc })
       );
       ring.rotation.x = Math.PI / 2;
-      ring.position.y = 0.3;
+      ring.position.y = 0.28;
       group.add(ring);
     }
   }
@@ -410,17 +388,17 @@ export class AbyssWorld {
   createItemBoxMesh() {
     const g = new THREE.Group();
     const box = new THREE.Mesh(
-      new THREE.BoxGeometry(0.72, 0.72, 0.72),
+      new THREE.BoxGeometry(0.7, 0.7, 0.7),
       new THREE.MeshStandardMaterial({
         color: 0xfbbf24,
         emissive: 0xd97706,
-        emissiveIntensity: 0.4,
+        emissiveIntensity: 0.45,
         roughness: 0.25,
         metalness: 0.4
       })
     );
     const frame = new THREE.Mesh(
-      new THREE.BoxGeometry(0.78, 0.78, 0.78),
+      new THREE.BoxGeometry(0.76, 0.76, 0.76),
       new THREE.MeshBasicMaterial({ color: 0xfef08a, wireframe: true })
     );
     g.add(box, frame);
@@ -452,7 +430,7 @@ export class AbyssWorld {
     canvas.width = 192;
     canvas.height = 64;
     const ctx = canvas.getContext('2d');
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
     ctx.roundRect(6, 6, 180, 52, 12);
     ctx.fill();
     ctx.lineWidth = 3;
@@ -466,11 +444,10 @@ export class AbyssWorld {
 
     const tex = new THREE.CanvasTexture(canvas);
     const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true }));
-    sp.scale.set(2.4, 0.8, 1);
+    sp.scale.set(2.3, 0.78, 1);
     return sp;
   }
 
-  // Ghost player curses a platform!
   cursePlatform(floorKey, newType = 'cracked') {
     const p = this.platforms.get(floorKey);
     if (!p) return false;
@@ -502,7 +479,7 @@ export class AbyssWorld {
     for (let i = 0; i < 5; i++) {
       const rx = -6.5 + i * 3.2 + (Math.random() - 0.5) * 1.4;
       const rz = (Math.random() - 0.5) * 4.2;
-      const ry = referenceY + 7 + i * 2.2;
+      const ry = referenceY + 6 + i * 1.8;
 
       const rockMesh = new THREE.Mesh(
         new THREE.DodecahedronGeometry(0.75, 0),
@@ -531,43 +508,44 @@ export class AbyssWorld {
         x: rx,
         y: ry,
         z: rz,
-        vy: -13.5
+        vy: -16.5
       });
     }
   }
 
   update(dt, lowestPlayerY) {
-    // Ensure platforms are always generated far below the deepest player
-    const deepestFloorNeeded = Math.max(25, Math.ceil(Math.abs(lowestPlayerY) / FLOOR_VERTICAL_GAP) + 18);
+    const deepestFloorNeeded = Math.max(30, Math.ceil(Math.abs(lowestPlayerY) / FLOOR_VERTICAL_GAP) + 20);
     this.ensureFloorsUpTo(deepestFloorNeeded);
 
-    // Move wall environment down with the action
-    this.wallRingGroup.position.y = Math.floor(lowestPlayerY / 6) * 6;
+    this.wallRingGroup.position.y = Math.floor(lowestPlayerY / 5) * 5;
 
-    // Speed boost countdown
     if (this.speedBoostTimer > 0) {
       this.speedBoostTimer = Math.max(0, this.speedBoostTimer - dt);
     }
 
-    // Descend Spiked Ceiling
+    // Fast-paced Spiked Ceiling descent!
     const currentFloorDepth = Math.max(1, Math.floor(Math.abs(this.ceilingY) / FLOOR_VERTICAL_GAP));
-    const baseSpeed = 2.05 + Math.min(2.1, currentFloorDepth * 0.032);
-    const mult = this.speedBoostTimer > 0 ? 1.55 : 1.0;
+    const baseSpeed = 3.55 + Math.min(3.4, currentFloorDepth * 0.055);
+    const mult = this.speedBoostTimer > 0 ? 1.6 : 1.0;
     this.ceilingY -= baseSpeed * mult * dt;
+
+    // Keep ceiling pressing right behind the action if players drop super fast!
+    if (this.ceilingY - lowestPlayerY > 13.5) {
+      this.ceilingY -= (this.ceilingY - lowestPlayerY - 13.5) * Math.min(1, dt * 5);
+    }
+
     this.ceilingGroup.position.y = this.ceilingY;
 
-    // Update platforms (item box rotation, cracked platform shatter/respawn, catapult cooldown)
     for (const [key, p] of this.platforms.entries()) {
-      // Remove very old platforms far above ceiling to keep mobile 60FPS smooth
-      if (p.y > this.ceilingY + 18) {
+      if (p.y > this.ceilingY + 16) {
         this.root.remove(p.group);
         this.platforms.delete(key);
         continue;
       }
 
       if (p.itemBoxMesh && p.hasItemBox) {
-        p.itemBoxMesh.rotation.y += dt * 2.6;
-        p.itemBoxMesh.rotation.x += dt * 1.2;
+        p.itemBoxMesh.rotation.y += dt * 3.2;
+        p.itemBoxMesh.rotation.x += dt * 1.5;
       }
 
       if (p.switchCooldown > 0) {
@@ -584,23 +562,21 @@ export class AbyssWorld {
         }
       } else if (p.crackedTimer > 0) {
         p.crackedTimer += dt;
-        // Shake intensely before shattering
-        p.group.position.x = p.x + Math.sin(performance.now() * 0.08) * 0.16;
-        if (p.crackedTimer >= 0.55) {
+        p.group.position.x = p.x + Math.sin(performance.now() * 0.1) * 0.18;
+        if (p.crackedTimer >= 0.36) {
           p.isBroken = true;
-          p.brokenRespawnTimer = 2.6;
+          p.brokenRespawnTimer = 2.2;
           p.group.visible = false;
         }
       }
     }
 
-    // Update falling rocks
     for (let i = this.rocks.length - 1; i >= 0; i--) {
       const r = this.rocks[i];
       r.y += r.vy * dt;
       r.mesh.position.y = r.y;
-      r.mesh.rotation.x += dt * 5;
-      r.mesh.rotation.z += dt * 4;
+      r.mesh.rotation.x += dt * 6;
+      r.mesh.rotation.z += dt * 5;
       r.warningLine.position.y = r.y - 12;
 
       if (r.y < lowestPlayerY - 25) {
