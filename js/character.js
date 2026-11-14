@@ -1,591 +1,601 @@
 import * as THREE from 'three';
 
-export const CUSTOM_CATALOG = {
-  genders: [
-    { id: 'boy', label: '👦 Q萌小男生' },
-    { id: 'girl', label: '👧 Q萌小女生' }
-  ],
-  skinColors: [
-    '#ffe4d0', '#f7cbb0', '#e3a882', '#c2835c', '#ffdce8'
-  ],
-  hairStyles: [
-    { id: 'bob', label: '🍄 呆毛妹妹頭' },
-    { id: 'twintails', label: '🎀 Q彈雙馬尾' },
-    { id: 'spiky', label: '⚡ 元氣刺蝟頭' },
-    { id: 'bun', label: '🍡 軟萌雙丸子' },
-    { id: 'pharaoh_hat', label: '👑 小法老頭巾' },
-    { id: 'cat_ears', label: '🐱 埃及貓耳髮' }
-  ],
-  hairColors: [
-    '#3b2820', '#ffd13b', '#ff5c8a', '#4cc9f0',
-    '#ff7b29', '#9b5de5', '#52b788', '#f8f9fa'
-  ],
-  eyeStyles: [
-    { id: 'starry', label: '✨ 閃亮水汪眼' },
-    { id: 'cute', label: '🍒 圓滾豆豆眼' },
-    { id: 'happy', label: '😊 笑瞇瞇彎眼' },
-    { id: 'cool', label: '😎 自信小酷眼' },
-    { id: 'fire', label: '🔥 探險鬥志眼' }
-  ],
-  eyeColors: [
-    '#2b2d42', '#0096c7', '#e63946', '#d97706', '#7209b7', '#2a9d8f'
-  ],
-  outfits: [
-    { id: 'explorer', label: '🧭 尋寶探險服' },
-    { id: 'pharaoh', label: '🏺 黃金小法老' },
-    { id: 'bastet', label: '🐾 貓神連身裝' },
-    { id: 'hoodie', label: '🧥 可愛連帽衫' },
-    { id: 'dino', label: '🦖 呆萌小恐龍' }
-  ],
-  outfitColors: [
-    '#f4a261', '#ffd166', '#4cc9f0', '#ff6b8b',
-    '#52b788', '#9b5de5', '#ffffff', '#3d405b'
-  ],
-  backItems: [
-    { id: 'backpack', label: '🎒 探險小背包' },
-    { id: 'wings', label: '🪽 荷魯斯小翼' },
-    { id: 'ankh', label: '☥ 守護生命符' },
-    { id: 'none', label: '🚫 無背飾' }
-  ],
-  trails: [
-    { id: 'gold', label: '✨ 黃金星砂', color: '#ffd166' },
-    { id: 'sand', label: '🌪️ 沙漠旋風', color: '#f4a261' },
-    { id: 'turquoise', label: '💎 聖甲蟲藍光', color: '#4cc9f0' }
-  ]
-};
+export const POSE_LIST = [
+  { id: 'stand', name: '標準站姿', icon: '🧍', desc: '一般站立與移動姿勢' },
+  { id: 'ball', name: '縮頭球體', icon: '⚽', desc: '縮成圓球（融入阻尼器球、石頭、燈球）' },
+  { id: 'cone', name: '尖塔三角錐', icon: '⚠️', desc: '雙手合十尖頂（融入三角錐、車柱、欄杆）' },
+  { id: 'box', name: '方塊抱膝蹲', icon: '📦', desc: '折成方箱（融入變電箱、垃圾桶、舞台音箱）' },
+  { id: 'flat', name: '極限平板趴', icon: '➖', desc: '完全攤平貼地（融入斑馬線、地磚、水池底）' },
+  { id: 'corner', name: 'L型直角折', icon: '📐', desc: '90度折腰（融入公園長椅、階梯、LOVE轉角）' },
+  { id: 'wall', name: '壁虎貼牆姿', icon: '🦎', desc: '扁平貼壁（融入紀念館大柱、101玻璃牆）' },
+  { id: 'guard', name: '衛兵敬禮姿', icon: '💂', desc: '立正敬禮不動（混入國父紀念館禮兵台）' },
+  { id: 'bboy', name: '街舞Freeze', icon: '🤸', desc: '單手倒立定格（混入迴廊街舞少年雕像）' }
+];
 
-export function getRandomAppearance() {
-  const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
-  return {
-    gender: pick(CUSTOM_CATALOG.genders).id,
-    skinColor: pick(CUSTOM_CATALOG.skinColors),
-    hairStyle: pick(CUSTOM_CATALOG.hairStyles).id,
-    hairColor: pick(CUSTOM_CATALOG.hairColors),
-    eyeStyle: pick(CUSTOM_CATALOG.eyeStyles).id,
-    eyeColor: pick(CUSTOM_CATALOG.eyeColors),
-    outfit: pick(CUSTOM_CATALOG.outfits).id,
-    outfitColor: pick(CUSTOM_CATALOG.outfitColors),
-    backItem: pick(CUSTOM_CATALOG.backItems).id,
-    trail: pick(CUSTOM_CATALOG.trails).id
-  };
+// Create crisp name tag sprite above character (Hidden for enemies when Chameleon is hidden!)
+function createNameSprite(name, role = 'chameleon') {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 64;
+  const ctx = canvas.getContext('2d');
+
+  ctx.clearRect(0, 0, 256, 64);
+  ctx.fillStyle = role === 'hunter' ? 'rgba(220, 38, 38, 0.85)' : 'rgba(15, 23, 42, 0.78)';
+  ctx.beginPath();
+  ctx.roundRect(18, 10, 220, 44, 22);
+  ctx.fill();
+
+  ctx.strokeStyle = role === 'hunter' ? '#fca5a5' : '#38bdf8';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+
+  ctx.font = 'bold 24px "Segoe UI", "Microsoft JhengHei", sans-serif';
+  ctx.fillStyle = '#ffffff';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const prefix = role === 'hunter' ? '🩴 ' : '';
+  ctx.fillText((prefix + name).slice(0, 10), 128, 33);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+  const sprite = new THREE.Sprite(mat);
+  sprite.scale.set(2.2, 0.55, 1);
+  sprite.position.set(0, 2.75, 0);
+  return sprite;
 }
 
-export class Character3D {
-  constructor(appearance = {}, name = 'Player', isLocal = false) {
-    this.appearance = {
-      gender: 'girl',
-      skinColor: '#ffe4d0',
-      hairStyle: 'bob',
-      hairColor: '#3b2820',
-      eyeStyle: 'starry',
-      eyeColor: '#2b2d42',
-      outfit: 'explorer',
-      outfitColor: '#f4a261',
-      backItem: 'backpack',
-      trail: 'gold',
-      ...appearance
-    };
+// Build iconic 3D Taiwanese Blue-and-White Slipper (國民藍白拖)
+function createBlueWhiteSlipperMesh() {
+  const group = new THREE.Group();
+
+  // Sole (Blue bottom, white top layer)
+  const soleBlueGeo = new THREE.BoxGeometry(0.46, 0.08, 1.05);
+  const blueMat = new THREE.MeshStandardMaterial({ color: 0x0284c7, roughness: 0.5 });
+  const whiteMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.4 });
+
+  const soleBlue = new THREE.Mesh(soleBlueGeo, blueMat);
+  soleBlue.position.set(0, 0, 0.35);
+  group.add(soleBlue);
+
+  const soleWhiteGeo = new THREE.BoxGeometry(0.44, 0.05, 1.02);
+  const soleWhite = new THREE.Mesh(soleWhiteGeo, whiteMat);
+  soleWhite.position.set(0, 0.05, 0.35);
+  group.add(soleWhite);
+
+  // Classic White & Blue Straps across instep
+  const strapGeo = new THREE.TorusGeometry(0.21, 0.065, 8, 16, Math.PI);
+  const strap1 = new THREE.Mesh(strapGeo, whiteMat);
+  strap1.rotation.y = Math.PI * 0.5;
+  strap1.position.set(0, 0.07, 0.22);
+  group.add(strap1);
+
+  const strap2 = new THREE.Mesh(strapGeo, blueMat);
+  strap2.rotation.y = Math.PI * 0.5;
+  strap2.position.set(0, 0.07, 0.48);
+  group.add(strap2);
+
+  return group;
+}
+
+export class ChameleonAvatar {
+  constructor(name = '變色龍', role = 'chameleon') {
     this.name = name;
-    this.isLocal = isLocal;
+    this.role = role; // 'chameleon' | 'hunter'
+    this.poseId = 'stand';
+    this.tiltAngle = 0; // Pitch tilt in radians (-PI/2 to PI/2)
+    this.isMoving = false;
+    this.walkPhase = 0;
+    this.swingTimer = 0;
+    this.stunnedTimer = 0;
+
+    // 6 Body Parts Colors & Roughness:
+    // [0:Head, 1:Chest, 2:Belly, 3:Arms, 4:Thighs, 5:Calves]
+    this.partColors = ['#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff'];
+    this.partRoughness = [0.35, 0.35, 0.35, 0.35, 0.35, 0.35];
+    this.partMetalness = [0.05, 0.05, 0.05, 0.05, 0.05, 0.05];
 
     this.root = new THREE.Group();
-    this.bodyGroup = new THREE.Group();
-    this.root.add(this.bodyGroup);
+    this.posePivot = new THREE.Group();
+    this.root.add(this.posePivot);
 
-    this.headGroup = null;
-    this.leftArm = null;
-    this.rightArm = null;
-    this.leftLeg = null;
-    this.rightLeg = null;
-    this.hairDynamicParts = [];
-    this.backDynamicParts = [];
-
-    // Face canvas for cute Chibi expressions
-    this.faceCanvas = document.createElement('canvas');
-    this.faceCanvas.width = 256;
-    this.faceCanvas.height = 256;
-    this.faceCtx = this.faceCanvas.getContext('2d');
-    this.faceTexture = new THREE.CanvasTexture(this.faceCanvas);
-    this.currentExpression = 'normal';
-    this.blinkTimer = Math.random() * 3;
-
-    this.squash = 1.0;
-    this.crouchAmount = 0; // 0 = standing, 1 = crouching
-
-    this.buildModel();
-    this.updateNameTag(this.name);
-  }
-
-  setAppearance(newApp) {
-    this.appearance = { ...this.appearance, ...newApp };
-    this.buildModel();
-  }
-
-  drawFace(expression = 'normal') {
-    const ctx = this.faceCtx;
-    const { skinColor, eyeStyle, eyeColor, gender } = this.appearance;
-
-    ctx.clearRect(0, 0, 256, 256);
-
-    // Base skin
-    ctx.fillStyle = skinColor;
-    ctx.fillRect(0, 0, 256, 256);
-
-    // Big soft pink chibi blush cheeks
-    ctx.fillStyle = 'rgba(255, 115, 145, 0.5)';
-    ctx.beginPath();
-    ctx.ellipse(58, 158, 25, 14, 0, 0, Math.PI * 2);
-    ctx.ellipse(198, 158, 25, 14, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Cute eyebrows
-    ctx.strokeStyle = '#3a2218';
-    ctx.lineWidth = 6;
-    ctx.lineCap = 'round';
-    if (expression === 'stun') {
-      ctx.beginPath();
-      ctx.moveTo(58, 90); ctx.lineTo(92, 80);
-      ctx.moveTo(198, 90); ctx.lineTo(164, 80);
-      ctx.stroke();
-    } else {
-      ctx.beginPath();
-      ctx.arc(76, 92, 16, Math.PI * 1.15, Math.PI * 1.85);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.arc(180, 92, 16, Math.PI * 1.15, Math.PI * 1.85);
-      ctx.stroke();
+    // Create 6 independent materials for the 6 body segments
+    this.partMaterials = [];
+    for (let i = 0; i < 6; i++) {
+      this.partMaterials.push(
+        new THREE.MeshStandardMaterial({
+          color: 0xffffff,
+          roughness: 0.35,
+          metalness: 0.05
+        })
+      );
     }
 
-    const drawEye = (cx, cy, isLeft) => {
-      if (expression === 'blink' || eyeStyle === 'happy' || expression === 'crouch') {
-        ctx.strokeStyle = '#241623';
-        ctx.lineWidth = 8;
-        ctx.beginPath();
-        ctx.arc(cx, cy + 4, 18, Math.PI * 1.1, Math.PI * 1.9);
-        ctx.stroke();
-        return;
-      }
+    this.buildBodyMeshes();
+    this.buildHunterGear();
 
-      if (expression === 'stun') {
-        // > < dizzy eyes
-        ctx.strokeStyle = '#241623';
-        ctx.lineWidth = 9;
-        ctx.beginPath();
-        if (isLeft) {
-          ctx.moveTo(cx - 14, cy - 12);
-          ctx.lineTo(cx + 12, cy);
-          ctx.lineTo(cx - 14, cy + 12);
-        } else {
-          ctx.moveTo(cx + 14, cy - 12);
-          ctx.lineTo(cx - 12, cy);
-          ctx.lineTo(cx + 14, cy + 12);
-        }
-        ctx.stroke();
-        return;
-      }
+    this.nameSprite = createNameSprite(this.name, this.role);
+    this.root.add(this.nameSprite);
 
-      if (eyeStyle === 'cute') {
-        // Super cute round bean eyes with big shine
-        ctx.fillStyle = '#1f1624';
-        ctx.beginPath();
-        ctx.arc(cx, cy, 20, 0, Math.PI * 2);
-        ctx.fill();
-
-        ctx.fillStyle = '#ffffff';
-        ctx.beginPath();
-        ctx.arc(cx - 6, cy - 6, 7, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.beginPath();
-        ctx.arc(cx + 6, cy + 6, 3.5, 0, Math.PI * 2);
-        ctx.fill();
-        return;
-      }
-
-      // Big anime/chibi eyes
-      const ry = eyeStyle === 'cool' ? 17 : 25;
-      ctx.fillStyle = '#1b1521';
-      ctx.beginPath();
-      ctx.ellipse(cx, cy, 22, ry, 0, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.fillStyle = eyeColor;
-      ctx.beginPath();
-      ctx.ellipse(cx, cy + 2, 17, ry - 4, 0, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.fillStyle = '#120d17';
-      ctx.beginPath();
-      ctx.arc(cx, cy + 2, 9.5, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Big sparkles
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath();
-      ctx.arc(cx - 7, cy - 7, 7, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.beginPath();
-      ctx.arc(cx + 6, cy + 6, 3.5, 0, Math.PI * 2);
-      ctx.fill();
-
-      if (gender === 'girl') {
-        ctx.strokeStyle = '#1b1521';
-        ctx.lineWidth = 5;
-        ctx.beginPath();
-        ctx.moveTo(cx + (isLeft ? -18 : 18), cy - 10);
-        ctx.lineTo(cx + (isLeft ? -26 : 26), cy - 17);
-        ctx.stroke();
-      }
-    };
-
-    drawEye(76, 126, true);
-    drawEye(180, 126, false);
-
-    // Cute cat/chibi mouth (w shape or small happy mouth)
-    ctx.strokeStyle = '#5e2a24';
-    ctx.fillStyle = '#ff6b81';
-    ctx.lineWidth = 5.5;
-    if (expression === 'stun') {
-      ctx.beginPath();
-      ctx.arc(128, 174, 11, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-    } else {
-      // Cute "ω" smile
-      ctx.beginPath();
-      ctx.arc(118, 166, 10, 0.1 * Math.PI, 0.95 * Math.PI);
-      ctx.arc(138, 166, 10, 0.05 * Math.PI, 0.9 * Math.PI);
-      ctx.stroke();
-    }
-
-    this.faceTexture.needsUpdate = true;
+    this.setRole(this.role);
+    this.applyPose('stand');
   }
 
-  buildModel() {
-    while (this.bodyGroup.children.length > 0) {
-      this.bodyGroup.remove(this.bodyGroup.children[0]);
-    }
-    this.hairDynamicParts = [];
-    this.backDynamicParts = [];
-
-    const { gender, skinColor, hairStyle, hairColor, outfit, outfitColor, backItem } = this.appearance;
-    this.drawFace('normal');
-
-    const skinMat = new THREE.MeshStandardMaterial({ color: skinColor, roughness: 0.55, metalness: 0.02 });
-    const hairMat = new THREE.MeshStandardMaterial({ color: hairColor, roughness: 0.45, metalness: 0.05 });
-    const outfitMat = new THREE.MeshStandardMaterial({ color: outfitColor, roughness: 0.45, metalness: 0.1 });
-    const goldMat = new THREE.MeshStandardMaterial({ color: '#ffd166', roughness: 0.25, metalness: 0.55 });
-    const whiteMat = new THREE.MeshStandardMaterial({ color: '#fff8eb', roughness: 0.4 });
-    const darkMat = new THREE.MeshStandardMaterial({ color: '#3b2d26', roughness: 0.6 });
-
-    // 1. BIG CUTE CHIBI HEAD (2-head ratio: larger, rounder head)
+  buildBodyMeshes() {
+    // 0: Head
     this.headGroup = new THREE.Group();
-    this.headGroup.position.set(0, 1.24, 0);
-    this.bodyGroup.add(this.headGroup);
-
-    const headGeo = new THREE.SphereGeometry(0.52, 24, 24);
-    const headMesh = new THREE.Mesh(
-      headGeo,
-      new THREE.MeshStandardMaterial({ map: this.faceTexture, roughness: 0.5 })
-    );
-    headMesh.scale.set(1.06, 0.98, 1.02); // Slightly wide chubby cheeks
-    headMesh.rotation.y = -Math.PI / 2;
+    const headMesh = new THREE.Mesh(new THREE.SphereGeometry(0.32, 18, 16), this.partMaterials[0]);
+    headMesh.scale.set(0.95, 1.08, 0.95);
     headMesh.castShadow = true;
     this.headGroup.add(headMesh);
+    this.posePivot.add(this.headGroup);
 
-    // Chubby round ears
-    const earGeo = new THREE.SphereGeometry(0.12, 12, 12);
-    const leftEar = new THREE.Mesh(earGeo, skinMat);
-    leftEar.position.set(-0.52, -0.04, 0);
-    const rightEar = new THREE.Mesh(earGeo, skinMat);
-    rightEar.position.set(0.52, -0.04, 0);
-    this.headGroup.add(leftEar, rightEar);
+    // 1: Chest (Upper Torso)
+    this.chestGroup = new THREE.Group();
+    const chestMesh = new THREE.Mesh(new THREE.BoxGeometry(0.68, 0.48, 0.38), this.partMaterials[1]);
+    chestMesh.castShadow = true;
+    this.chestGroup.add(chestMesh);
+    this.posePivot.add(this.chestGroup);
 
-    // 2. CUTE HAIR & HEADWEAR
-    const hairCap = new THREE.Mesh(
-      new THREE.SphereGeometry(0.545, 20, 20, 0, Math.PI * 2, 0, Math.PI * 0.58),
-      hairMat
-    );
-    hairCap.position.y = 0.02;
-    hairCap.scale.set(1.06, 1.0, 1.03);
-    hairCap.rotation.x = -0.15;
-    this.headGroup.add(hairCap);
+    // 2: Belly (Lower Torso / Pelvis)
+    this.bellyGroup = new THREE.Group();
+    const bellyMesh = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.44, 0.36), this.partMaterials[2]);
+    bellyMesh.castShadow = true;
+    this.bellyGroup.add(bellyMesh);
+    this.posePivot.add(this.bellyGroup);
 
-    // Cute Ahoge (top sprout hair)
-    const ahoge = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.26, 8), hairMat);
-    ahoge.position.set(0.05, 0.62, 0.05);
-    ahoge.rotation.z = -0.35;
-    this.headGroup.add(ahoge);
-    this.hairDynamicParts.push(ahoge);
+    // 3: Arms (Left & Right)
+    this.leftArm = new THREE.Group();
+    const lArmMesh = new THREE.Mesh(new THREE.CapsuleGeometry(0.12, 0.48, 8, 12), this.partMaterials[3]);
+    lArmMesh.position.y = -0.24;
+    lArmMesh.castShadow = true;
+    this.leftArm.add(lArmMesh);
+    this.posePivot.add(this.leftArm);
 
-    // Front bangs
-    const bangGeo = new THREE.CapsuleGeometry(0.09, 0.16, 6, 8);
-    for (let i = -1.5; i <= 1.5; i += 1) {
-      const bang = new THREE.Mesh(bangGeo, hairMat);
-      bang.position.set(i * 0.13, 0.26, 0.48);
-      bang.rotation.z = i * -0.1;
-      this.headGroup.add(bang);
-    }
+    this.rightArm = new THREE.Group();
+    const rArmMesh = new THREE.Mesh(new THREE.CapsuleGeometry(0.12, 0.48, 8, 12), this.partMaterials[3]);
+    rArmMesh.position.y = -0.24;
+    rArmMesh.castShadow = true;
+    this.rightArm.add(rArmMesh);
+    this.posePivot.add(this.rightArm);
 
-    if (hairStyle === 'twintails') {
-      [-1, 1].forEach((dir) => {
-        const pivot = new THREE.Group();
-        pivot.position.set(dir * 0.5, 0.14, -0.1);
-        const ribbon = new THREE.Mesh(new THREE.SphereGeometry(0.11, 10, 10), goldMat);
-        const tail = new THREE.Mesh(new THREE.SphereGeometry(0.24, 14, 14), hairMat);
-        tail.scale.set(0.85, 1.35, 0.85);
-        tail.position.set(dir * 0.15, -0.22, -0.05);
-        pivot.add(ribbon, tail);
-        this.headGroup.add(pivot);
-        this.hairDynamicParts.push(pivot);
-      });
-    } else if (hairStyle === 'bun') {
-      [-1, 1].forEach((dir) => {
-        const bun = new THREE.Mesh(new THREE.SphereGeometry(0.24, 16, 16), hairMat);
-        bun.position.set(dir * 0.42, 0.46, -0.06);
-        const ring = new THREE.Mesh(new THREE.TorusGeometry(0.18, 0.035, 8, 16), goldMat);
-        ring.position.copy(bun.position);
-        ring.rotation.x = Math.PI / 2;
-        this.headGroup.add(bun, ring);
-      });
-    } else if (hairStyle === 'spiky') {
-      const spikeGeo = new THREE.ConeGeometry(0.18, 0.4, 8);
-      [[-0.3, 0.5, 0.5], [0, 0.58, 0], [0.3, 0.5, -0.5]].forEach(([x, y, rz]) => {
-        const s = new THREE.Mesh(spikeGeo, hairMat);
-        s.position.set(x, y, 0);
-        s.rotation.z = rz;
-        this.headGroup.add(s);
-      });
-    } else if (hairStyle === 'pharaoh_hat') {
-      // Nemes Pharaoh Headdress
-      const nemes = new THREE.Mesh(new THREE.CylinderGeometry(0.56, 0.68, 0.62, 16), goldMat);
-      nemes.position.set(0, 0.12, -0.14);
-      const cobra = new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 10), outfitMat);
-      cobra.position.set(0, 0.44, 0.52);
-      this.headGroup.add(nemes, cobra);
-    } else if (hairStyle === 'cat_ears') {
-      // Cute Egyptian Bastet Cat Ears with gold rings
-      const earCone = new THREE.ConeGeometry(0.18, 0.36, 12);
-      [-1, 1].forEach((dir) => {
-        const cEar = new THREE.Mesh(earCone, hairMat);
-        cEar.position.set(dir * 0.34, 0.54, 0.05);
-        cEar.rotation.z = dir * -0.25;
-        this.headGroup.add(cEar);
-      });
-    }
+    // 4: Thighs (Left & Right Upper Legs)
+    this.leftThigh = new THREE.Group();
+    const lThighMesh = new THREE.Mesh(new THREE.CapsuleGeometry(0.14, 0.32, 8, 12), this.partMaterials[4]);
+    lThighMesh.position.y = -0.18;
+    lThighMesh.castShadow = true;
+    this.leftThigh.add(lThighMesh);
+    this.posePivot.add(this.leftThigh);
 
-    // 3. CHUBBY CUTE TORSO & OUTFITS
-    const bodyGeo = new THREE.CapsuleGeometry(0.32, 0.24, 12, 16);
-    const bodyMesh = new THREE.Mesh(bodyGeo, outfitMat);
-    bodyMesh.position.set(0, 0.58, 0);
-    bodyMesh.castShadow = true;
-    this.bodyGroup.add(bodyMesh);
+    this.rightThigh = new THREE.Group();
+    const rThighMesh = new THREE.Mesh(new THREE.CapsuleGeometry(0.14, 0.32, 8, 12), this.partMaterials[4]);
+    rThighMesh.position.y = -0.18;
+    rThighMesh.castShadow = true;
+    this.rightThigh.add(rThighMesh);
+    this.posePivot.add(this.rightThigh);
 
-    if (outfit === 'explorer') {
-      // Cute Explorer pith belt & scarf
-      const scarf = new THREE.Mesh(new THREE.TorusGeometry(0.28, 0.075, 10, 18), new THREE.MeshStandardMaterial({ color: '#e63946' }));
-      scarf.position.set(0, 0.82, 0);
-      scarf.rotation.x = Math.PI / 2;
-      const belt = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.1, 16), darkMat);
-      belt.position.set(0, 0.48, 0);
-      this.bodyGroup.add(scarf, belt);
-    } else if (outfit === 'pharaoh') {
-      // Golden collar & white royal kilt
-      const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.42, 0.12, 16), goldMat);
-      collar.position.set(0, 0.8, 0);
-      const kilt = new THREE.Mesh(new THREE.ConeGeometry(0.42, 0.28, 16), whiteMat);
-      kilt.position.set(0, 0.42, 0);
-      this.bodyGroup.add(collar, kilt);
-    } else if (outfit === 'bastet') {
-      // Cute cat bell collar & cat tail
-      const collar = new THREE.Mesh(new THREE.TorusGeometry(0.27, 0.05, 8, 16), goldMat);
-      collar.position.set(0, 0.82, 0);
-      collar.rotation.x = Math.PI / 2;
-      const bell = new THREE.Mesh(new THREE.SphereGeometry(0.08, 10, 10), goldMat);
-      bell.position.set(0, 0.78, 0.32);
-      const tail = new THREE.Mesh(new THREE.CapsuleGeometry(0.06, 0.38, 8, 10), outfitMat);
-      tail.position.set(0, 0.45, -0.38);
-      tail.rotation.x = -0.8;
-      this.bodyGroup.add(collar, bell, tail);
-    } else if (outfit === 'dino') {
-      const tail = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.48, 10), outfitMat);
-      tail.position.set(0, 0.44, -0.38);
-      tail.rotation.x = -Math.PI * 0.6;
-      this.bodyGroup.add(tail);
-      for (let i = 0; i < 3; i++) {
-        const sp = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.16, 8), goldMat);
-        sp.position.set(0, 0.78 - i * 0.15, -0.32);
-        sp.rotation.x = -Math.PI / 2;
-        this.bodyGroup.add(sp);
-      }
-    }
+    // 5: Calves (Left & Right Lower Legs)
+    this.leftCalf = new THREE.Group();
+    const lCalfMesh = new THREE.Mesh(new THREE.CapsuleGeometry(0.12, 0.32, 8, 12), this.partMaterials[5]);
+    lCalfMesh.position.y = -0.18;
+    lCalfMesh.castShadow = true;
+    this.leftCalf.add(lCalfMesh);
+    this.posePivot.add(this.leftCalf);
 
-    // 4. STUBBY CUTE HANDS & FEET
-    const handGeo = new THREE.SphereGeometry(0.13, 12, 12);
-    this.leftArm = new THREE.Mesh(handGeo, skinMat);
-    this.leftArm.scale.set(0.9, 1.35, 0.9);
-    this.leftArm.position.set(-0.4, 0.62, 0);
-    this.rightArm = new THREE.Mesh(handGeo, skinMat);
-    this.rightArm.scale.set(0.9, 1.35, 0.9);
-    this.rightArm.position.set(0.4, 0.62, 0);
-    this.bodyGroup.add(this.leftArm, this.rightArm);
-
-    const footGeo = new THREE.SphereGeometry(0.14, 12, 12);
-    this.leftLeg = new THREE.Mesh(footGeo, darkMat);
-    this.leftLeg.scale.set(0.95, 0.85, 1.25);
-    this.leftLeg.position.set(-0.16, 0.14, 0.04);
-    this.rightLeg = new THREE.Mesh(footGeo, darkMat);
-    this.rightLeg.scale.set(0.95, 0.85, 1.25);
-    this.rightLeg.position.set(0.16, 0.14, 0.04);
-    this.bodyGroup.add(this.leftLeg, this.rightLeg);
-
-    // 5. BACK ITEMS
-    if (backItem === 'backpack') {
-      const pack = new THREE.Mesh(
-        new THREE.BoxGeometry(0.42, 0.42, 0.24),
-        new THREE.MeshStandardMaterial({ color: '#bc6c25', roughness: 0.6 })
-      );
-      pack.position.set(0, 0.62, -0.32);
-      const scroll = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.48, 10), goldMat);
-      scroll.rotation.z = Math.PI / 2;
-      scroll.position.set(0, 0.86, -0.32);
-      this.bodyGroup.add(pack, scroll);
-    } else if (backItem === 'wings') {
-      [-1, 1].forEach((dir) => {
-        const wingPivot = new THREE.Group();
-        wingPivot.position.set(dir * 0.14, 0.72, -0.28);
-        const w = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.22, 0.05), goldMat);
-        w.position.set(dir * 0.2, 0.06, 0);
-        w.rotation.z = dir * 0.3;
-        wingPivot.add(w);
-        this.bodyGroup.add(wingPivot);
-        this.backDynamicParts.push(wingPivot);
-      });
-    } else if (backItem === 'ankh') {
-      const ankhGroup = new THREE.Group();
-      ankhGroup.position.set(0, 0.7, -0.36);
-      const loop = new THREE.Mesh(new THREE.TorusGeometry(0.12, 0.035, 8, 16), goldMat);
-      loop.position.y = 0.15;
-      const barV = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.32, 0.05), goldMat);
-      barV.position.y = -0.08;
-      const barH = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.07, 0.05), goldMat);
-      barH.position.y = 0.02;
-      ankhGroup.add(loop, barV, barH);
-      this.bodyGroup.add(ankhGroup);
-      this.backDynamicParts.push(ankhGroup);
-    }
-
-    // 6. MUMMY WRAP VISUAL EFFECT (Visible when hit by Mummy Bandage item!)
-    const mummyGroup = new THREE.Group();
-    const bandageMat = new THREE.MeshStandardMaterial({ color: '#f8f5e6', roughness: 0.9 });
-    for (let i = 0; i < 4; i++) {
-      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.36, 0.065, 8, 16), bandageMat);
-      ring.position.y = 0.4 + i * 0.16;
-      ring.rotation.x = Math.PI / 2 + (i % 2 === 0 ? 0.18 : -0.18);
-      mummyGroup.add(ring);
-    }
-    mummyGroup.visible = false;
-    this.mummyMesh = mummyGroup;
-    this.bodyGroup.add(mummyGroup);
+    this.rightCalf = new THREE.Group();
+    const rCalfMesh = new THREE.Mesh(new THREE.CapsuleGeometry(0.12, 0.32, 8, 12), this.partMaterials[5]);
+    rCalfMesh.position.y = -0.18;
+    rCalfMesh.castShadow = true;
+    this.rightCalf.add(rCalfMesh);
+    this.posePivot.add(this.rightCalf);
   }
 
-  updateNameTag(name) {
-    this.name = name;
+  buildHunterGear() {
+    this.hunterGear = new THREE.Group();
+
+    // Red Hunter Headband on Head
+    const bandGeo = new THREE.CylinderGeometry(0.33, 0.33, 0.12, 18);
+    const redMat = new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.4 });
+    this.headband = new THREE.Mesh(bandGeo, redMat);
+    this.headband.position.set(0, 0.1, 0);
+    this.headGroup.add(this.headband);
+
+    // Hunter Eyes
+    const eyeGeo = new THREE.SphereGeometry(0.055, 8, 8);
+    const eyeMat = new THREE.MeshBasicMaterial({ color: 0x111827 });
+    this.leftEye = new THREE.Mesh(eyeGeo, eyeMat);
+    this.leftEye.position.set(-0.11, 0.02, 0.29);
+    this.rightEye = new THREE.Mesh(eyeGeo, eyeMat);
+    this.rightEye.position.set(0.11, 0.02, 0.29);
+    this.headGroup.add(this.leftEye, this.rightEye);
+
+    // Giant Blue-and-White Slipper attached to Right Arm
+    this.slipperWeapon = createBlueWhiteSlipperMesh();
+    this.slipperWeapon.position.set(0, -0.52, 0.15);
+    this.slipperWeapon.rotation.x = Math.PI * 0.25;
+    this.slipperWeapon.scale.set(1.45, 1.45, 1.45);
+    this.rightArm.add(this.slipperWeapon);
+
+    // Dizzy Stars for 4-second Wrong-Hit Penalty
+    this.stunStars = new THREE.Group();
+    const starGeo = new THREE.OctahedronGeometry(0.12, 0);
+    const starMat = new THREE.MeshBasicMaterial({ color: 0xfacc15 });
+    for (let i = 0; i < 4; i++) {
+      const s = new THREE.Mesh(starGeo, starMat);
+      const angle = (i / 4) * Math.PI * 2;
+      s.position.set(Math.cos(angle) * 0.55, 2.35, Math.sin(angle) * 0.55);
+      this.stunStars.add(s);
+    }
+    this.stunStars.visible = false;
+    this.root.add(this.stunStars);
+  }
+
+  setRole(role) {
+    this.role = role;
+    const isHunter = role === 'hunter';
+
+    this.headband.visible = isHunter;
+    this.leftEye.visible = isHunter;
+    this.rightEye.visible = isHunter;
+    this.slipperWeapon.visible = isHunter;
+
+    if (isHunter) {
+      // Hunter uniform colors (Taiwanese Patrol Uncle style)
+      this.setAllParts([
+        { color: '#fde68a', roughness: 0.4, metalness: 0.0 }, // Head skin
+        { color: '#0284c7', roughness: 0.5, metalness: 0.1 }, // Blue patrol vest
+        { color: '#1e293b', roughness: 0.6, metalness: 0.0 }, // Belt/Shorts
+        { color: '#fde68a', roughness: 0.4, metalness: 0.0 }, // Arms
+        { color: '#1e293b', roughness: 0.6, metalness: 0.0 }, // Thighs
+        { color: '#38bdf8', roughness: 0.5, metalness: 0.0 }  // Slippers/Calves
+      ]);
+      this.applyPose('stand');
+      this.setTilt(0);
+    }
+
+    // Rebuild name tag for new role
     if (this.nameSprite) {
       this.root.remove(this.nameSprite);
     }
-    const canvas = document.createElement('canvas');
-    canvas.width = 256;
-    canvas.height = 64;
-    const ctx = canvas.getContext('2d');
-
-    ctx.fillStyle = this.isLocal ? 'rgba(255, 209, 102, 0.92)' : 'rgba(35, 24, 16, 0.78)';
-    ctx.beginPath();
-    ctx.roundRect(22, 12, 212, 40, 20);
-    ctx.fill();
-
-    ctx.font = 'bold 24px "Microsoft JhengHei", sans-serif';
-    ctx.fillStyle = this.isLocal ? '#2b1808' : '#fff8eb';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(this.name, 128, 33);
-
-    const tex = new THREE.CanvasTexture(canvas);
-    const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
-    this.nameSprite = new THREE.Sprite(mat);
-    this.nameSprite.position.set(0, 2.15, 0);
-    this.nameSprite.scale.set(1.4, 0.35, 1);
+    this.nameSprite = createNameSprite(this.name, this.role);
     this.root.add(this.nameSprite);
   }
 
-  animate(dt, time, state = {}) {
-    const { speed = 10, isGrounded = true, isStunned = false, isCrouching = false, isMummified = false } = state;
+  // Reset to 100% Pure White Chameleon at start of round
+  resetToPureWhite() {
+    const whiteParts = Array.from({ length: 6 }, () => ({
+      color: '#ffffff',
+      roughness: 0.32,
+      metalness: 0.04
+    }));
+    this.setAllParts(whiteParts);
+    this.applyPose('stand');
+    this.setTilt(0);
+  }
 
-    if (this.mummyMesh) {
-      this.mummyMesh.visible = !!isMummified;
+  setAllParts(partDataArray) {
+    for (let i = 0; i < 6; i++) {
+      const d = partDataArray[i] || partDataArray[0];
+      if (!d) continue;
+      this.partColors[i] = d.color || '#ffffff';
+      this.partRoughness[i] = d.roughness !== undefined ? d.roughness : 0.4;
+      this.partMetalness[i] = d.metalness !== undefined ? d.metalness : 0.05;
+
+      this.partMaterials[i].color.set(this.partColors[i]);
+      this.partMaterials[i].roughness = this.partRoughness[i];
+      this.partMaterials[i].metalness = this.partMetalness[i];
+    }
+  }
+
+  setSingleColor(hexColor, roughness = 0.45, metalness = 0.05) {
+    const arr = Array.from({ length: 6 }, () => ({
+      color: hexColor,
+      roughness,
+      metalness
+    }));
+    this.setAllParts(arr);
+  }
+
+  // Return world-space center coordinates of each of the 6 body parts for Surroundings Auto-Blend Raycasting
+  getPartWorldCenters() {
+    this.root.updateMatrixWorld(true);
+    const groups = [
+      this.headGroup,
+      this.chestGroup,
+      this.bellyGroup,
+      this.leftArm,
+      this.leftThigh,
+      this.leftCalf
+    ];
+    return groups.map((g) => {
+      const v = new THREE.Vector3();
+      g.getWorldPosition(v);
+      return v;
+    });
+  }
+
+  setTilt(radians) {
+    this.tiltAngle = Math.max(-Math.PI * 0.5, Math.min(Math.PI * 0.5, radians));
+    this.posePivot.rotation.x = this.tiltAngle;
+  }
+
+  // Transform the 6 body segments to break humanoid silhouette!
+  applyPose(poseId) {
+    this.poseId = poseId || 'stand';
+
+    // Reset defaults first
+    const parts = [
+      this.headGroup,
+      this.chestGroup,
+      this.bellyGroup,
+      this.leftArm,
+      this.rightArm,
+      this.leftThigh,
+      this.rightThigh,
+      this.leftCalf,
+      this.rightCalf
+    ];
+    parts.forEach((p) => {
+      p.position.set(0, 0, 0);
+      p.rotation.set(0, 0, 0);
+      p.scale.set(1, 1, 1);
+    });
+
+    switch (this.poseId) {
+      case 'ball':
+        // 1. 縮頭球體姿：捲成一顆緊密圓球（適合阻尼器球、花圃石頭、燈飾）
+        this.chestGroup.position.set(0, 0.52, 0);
+        this.chestGroup.scale.set(1.15, 1.15, 1.25);
+        this.bellyGroup.position.set(0, 0.36, 0.05);
+        this.bellyGroup.scale.set(1.15, 1.1, 1.25);
+        this.headGroup.position.set(0, 0.56, 0.12);
+        this.headGroup.scale.set(1.2, 1.1, 1.2);
+        this.leftArm.position.set(-0.28, 0.58, 0.1);
+        this.leftArm.rotation.set(0.8, 0, -0.5);
+        this.rightArm.position.set(0.28, 0.58, 0.1);
+        this.rightArm.rotation.set(0.8, 0, 0.5);
+        this.leftThigh.position.set(-0.2, 0.35, -0.1);
+        this.leftThigh.rotation.set(1.4, 0, 0);
+        this.rightThigh.position.set(0.2, 0.35, -0.1);
+        this.rightThigh.rotation.set(1.4, 0, 0);
+        this.leftCalf.position.set(-0.18, 0.25, 0.15);
+        this.leftCalf.rotation.set(-1.5, 0, 0);
+        this.rightCalf.position.set(0.18, 0.25, 0.15);
+        this.rightCalf.rotation.set(-1.5, 0, 0);
+        break;
+
+      case 'cone':
+        // 2. 尖塔三角錐姿：上尖下寬（完美偽裝成交通三角錐、車柱）
+        this.headGroup.position.set(0, 1.55, 0);
+        this.headGroup.scale.set(0.62, 1.15, 0.62);
+        this.leftArm.position.set(-0.12, 1.72, 0);
+        this.leftArm.rotation.set(0, 0, -0.18);
+        this.rightArm.position.set(0.12, 1.72, 0);
+        this.rightArm.rotation.set(0, 0, 0.18);
+        this.chestGroup.position.set(0, 1.12, 0);
+        this.chestGroup.scale.set(0.78, 1.1, 0.85);
+        this.bellyGroup.position.set(0, 0.68, 0);
+        this.bellyGroup.scale.set(1.08, 1.1, 1.12);
+        this.leftThigh.position.set(-0.26, 0.42, 0);
+        this.leftThigh.scale.set(1.35, 1.0, 1.35);
+        this.rightThigh.position.set(0.26, 0.42, 0);
+        this.rightThigh.scale.set(1.35, 1.0, 1.35);
+        this.leftCalf.position.set(-0.34, 0.15, 0);
+        this.leftCalf.scale.set(1.6, 0.7, 1.6);
+        this.rightCalf.position.set(0.34, 0.15, 0);
+        this.rightCalf.scale.set(1.6, 0.7, 1.6);
+        break;
+
+      case 'box':
+        // 3. 方塊抱膝蹲：正方體箱型（偽裝變電箱、垃圾桶、舞台音箱）
+        this.chestGroup.position.set(0, 0.78, 0);
+        this.chestGroup.scale.set(1.25, 1.15, 1.35);
+        this.bellyGroup.position.set(0, 0.34, 0);
+        this.bellyGroup.scale.set(1.32, 1.15, 1.42);
+        this.headGroup.position.set(0, 0.82, 0);
+        this.headGroup.scale.set(0.85, 0.65, 0.85);
+        this.leftArm.position.set(-0.38, 0.78, 0);
+        this.rightArm.position.set(0.38, 0.78, 0);
+        this.leftThigh.position.set(-0.26, 0.42, 0.16);
+        this.rightThigh.position.set(0.26, 0.42, 0.16);
+        this.leftCalf.position.set(-0.26, 0.24, -0.16);
+        this.rightCalf.position.set(0.26, 0.24, -0.16);
+        break;
+
+      case 'flat':
+        // 4. 極限平板趴：完全貼平地面（融入斑馬線、地磚、水池底）
+        this.headGroup.position.set(0, 0.1, 0.78);
+        this.headGroup.scale.set(1.1, 0.32, 1.1);
+        this.chestGroup.position.set(0, 0.1, 0.32);
+        this.chestGroup.scale.set(1.2, 0.28, 1.25);
+        this.bellyGroup.position.set(0, 0.1, -0.16);
+        this.bellyGroup.scale.set(1.18, 0.28, 1.25);
+        this.leftArm.position.set(-0.42, 0.1, 0.45);
+        this.leftArm.rotation.x = Math.PI * 0.5;
+        this.leftArm.scale.set(1, 1, 0.35);
+        this.rightArm.position.set(0.42, 0.1, 0.45);
+        this.rightArm.rotation.x = Math.PI * 0.5;
+        this.rightArm.scale.set(1, 1, 0.35);
+        this.leftThigh.position.set(-0.22, 0.1, -0.45);
+        this.leftThigh.rotation.x = Math.PI * 0.5;
+        this.rightThigh.position.set(0.22, 0.1, -0.45);
+        this.rightThigh.rotation.x = Math.PI * 0.5;
+        this.leftCalf.position.set(-0.22, 0.1, -0.85);
+        this.leftCalf.rotation.x = Math.PI * 0.5;
+        this.rightCalf.position.set(0.22, 0.1, -0.85);
+        this.rightCalf.rotation.x = Math.PI * 0.5;
+        break;
+
+      case 'corner':
+        // 5. L型直角折腰：90度直角（卡進公園長椅、階梯、LOVE字母轉角）
+        this.headGroup.position.set(0, 1.18, -0.25);
+        this.chestGroup.position.set(0, 0.85, -0.25);
+        this.chestGroup.scale.set(1.2, 1.0, 0.7);
+        this.bellyGroup.position.set(0, 0.52, -0.12);
+        this.leftArm.position.set(-0.38, 0.52, 0.2);
+        this.leftArm.rotation.x = Math.PI * 0.5;
+        this.rightArm.position.set(0.38, 0.52, 0.2);
+        this.rightArm.rotation.x = Math.PI * 0.5;
+        this.leftThigh.position.set(-0.22, 0.48, 0.28);
+        this.leftThigh.rotation.x = Math.PI * 0.5;
+        this.rightThigh.position.set(0.22, 0.48, 0.28);
+        this.rightThigh.rotation.x = Math.PI * 0.5;
+        this.leftCalf.position.set(-0.22, 0.38, 0.48);
+        this.rightCalf.position.set(0.22, 0.38, 0.48);
+        break;
+
+      case 'wall':
+        // 6. 壁虎貼牆姿：極度扁平垂直貼牆（融入紀念館大柱、玻璃帷幕、海報看板）
+        this.headGroup.position.set(0, 1.65, -0.15);
+        this.headGroup.scale.set(1.1, 1.1, 0.32);
+        this.chestGroup.position.set(0, 1.22, -0.15);
+        this.chestGroup.scale.set(1.25, 1.1, 0.28);
+        this.bellyGroup.position.set(0, 0.78, -0.15);
+        this.bellyGroup.scale.set(1.2, 1.1, 0.28);
+        this.leftArm.position.set(-0.55, 1.45, -0.15);
+        this.leftArm.rotation.z = -0.85;
+        this.leftArm.scale.set(1, 1, 0.32);
+        this.rightArm.position.set(0.55, 1.45, -0.15);
+        this.rightArm.rotation.z = 0.85;
+        this.rightArm.scale.set(1, 1, 0.32);
+        this.leftThigh.position.set(-0.28, 0.55, -0.15);
+        this.leftThigh.scale.set(1, 1, 0.32);
+        this.rightThigh.position.set(0.28, 0.55, -0.15);
+        this.rightThigh.scale.set(1, 1, 0.32);
+        this.leftCalf.position.set(-0.32, 0.22, -0.15);
+        this.leftCalf.scale.set(1, 1, 0.32);
+        this.rightCalf.position.set(0.32, 0.22, -0.15);
+        this.rightCalf.scale.set(1, 1, 0.32);
+        break;
+
+      case 'guard':
+        // 7. 衛兵立正敬禮姿（混入國父紀念館禮兵台、百貨模特兒）
+        this.headGroup.position.set(0, 1.72, 0);
+        this.chestGroup.position.set(0, 1.26, 0);
+        this.bellyGroup.position.set(0, 0.82, 0);
+        this.leftArm.position.set(-0.42, 1.42, 0);
+        this.rightArm.position.set(0.42, 1.48, 0.12);
+        this.rightArm.rotation.set(-2.3, 0, -0.45); // Salute!
+        this.leftThigh.position.set(-0.15, 0.62, 0);
+        this.rightThigh.position.set(0.15, 0.62, 0);
+        this.leftCalf.position.set(-0.15, 0.28, 0);
+        this.rightCalf.position.set(0.15, 0.28, 0);
+        break;
+
+      case 'bboy':
+        // 8. 街舞單手倒立 Freeze（混入國父紀念館迴廊街舞少年）
+        this.headGroup.position.set(0, 0.42, 0);
+        this.chestGroup.position.set(0, 0.78, 0);
+        this.chestGroup.rotation.z = 0.25;
+        this.bellyGroup.position.set(0.1, 1.18, 0);
+        this.bellyGroup.rotation.z = 0.35;
+        this.leftArm.position.set(-0.22, 0.55, 0);
+        this.leftArm.rotation.z = 0.1;
+        this.rightArm.position.set(0.48, 0.95, 0);
+        this.rightArm.rotation.z = 1.9;
+        this.leftThigh.position.set(-0.15, 1.55, 0);
+        this.leftThigh.rotation.z = 2.5;
+        this.rightThigh.position.set(0.45, 1.52, 0);
+        this.rightThigh.rotation.z = -2.2;
+        this.leftCalf.position.set(-0.45, 1.85, 0);
+        this.leftCalf.rotation.z = 2.5;
+        this.rightCalf.position.set(0.75, 1.82, 0);
+        this.rightCalf.rotation.z = -2.2;
+        break;
+
+      case 'stand':
+      default:
+        // 標準人形站立
+        this.headGroup.position.set(0, 1.68, 0);
+        this.chestGroup.position.set(0, 1.22, 0);
+        this.bellyGroup.position.set(0, 0.80, 0);
+        this.leftArm.position.set(-0.44, 1.42, 0);
+        this.rightArm.position.set(0.44, 1.42, 0);
+        this.leftThigh.position.set(-0.18, 0.60, 0);
+        this.rightThigh.position.set(0.18, 0.60, 0);
+        this.leftCalf.position.set(-0.18, 0.28, 0);
+        this.rightCalf.position.set(0.18, 0.28, 0);
+        break;
+    }
+  }
+
+  triggerSlipperSwing() {
+    this.swingTimer = 0.36;
+  }
+
+  update(dt, isMoving = false) {
+    this.isMoving = isMoving;
+
+    // Stunned spinning stars animation (when Hunter hits wrong prop)
+    if (this.stunnedTimer > 0) {
+      this.stunnedTimer = Math.max(0, this.stunnedTimer - dt);
+      this.stunStars.visible = true;
+      this.stunStars.rotation.y += dt * 6.5;
+    } else {
+      this.stunStars.visible = false;
     }
 
-    // Expression & Blink
-    let targetExp = 'normal';
-    if (isStunned || isMummified) targetExp = 'stun';
-    else if (isCrouching) targetExp = 'crouch';
-    else {
-      this.blinkTimer -= dt;
-      if (this.blinkTimer <= 0) {
-        targetExp = 'blink';
-        if (this.blinkTimer <= -0.14) {
-          this.blinkTimer = 2.4 + Math.random() * 2.5;
-        }
+    // Running leg/arm swing when moving in stand pose (or Hunter chasing)
+    if (isMoving && (this.poseId === 'stand' || this.role === 'hunter')) {
+      this.walkPhase += dt * 11;
+      const swing = Math.sin(this.walkPhase) * 0.55;
+      this.leftThigh.rotation.x = swing;
+      this.rightThigh.rotation.x = -swing;
+      this.leftCalf.rotation.x = swing * 0.6;
+      this.rightCalf.rotation.x = -swing * 0.6;
+      this.leftArm.rotation.x = -swing * 0.7;
+      if (this.swingTimer <= 0) {
+        this.rightArm.rotation.x = swing * 0.7;
+      }
+    } else if (this.poseId === 'stand') {
+      this.leftThigh.rotation.x = 0;
+      this.rightThigh.rotation.x = 0;
+      this.leftCalf.rotation.x = 0;
+      this.rightCalf.rotation.x = 0;
+      this.leftArm.rotation.x = 0;
+      if (this.swingTimer <= 0) {
+        this.rightArm.rotation.x = 0;
       }
     }
-    if (targetExp !== this.currentExpression) {
-      this.currentExpression = targetExp;
-      this.drawFace(targetExp);
+
+    // Blue-White Slipper Smash Animation
+    if (this.swingTimer > 0) {
+      this.swingTimer = Math.max(0, this.swingTimer - dt);
+      const t = 1 - this.swingTimer / 0.36;
+      const arc = Math.sin(t * Math.PI);
+      this.rightArm.rotation.x = -Math.PI * 0.85 * arc;
+      this.rightArm.rotation.z = -0.25 * arc;
     }
+  }
 
-    // Smooth Crouch & Squash interpolation
-    const targetCrouch = isCrouching ? 1.0 : 0.0;
-    this.crouchAmount += (targetCrouch - this.crouchAmount) * Math.min(1, dt * 16);
-    this.squash += (1.0 - this.squash) * Math.min(1, dt * 10);
+  serializeAppearance() {
+    return {
+      role: this.role,
+      poseId: this.poseId,
+      tiltAngle: Number(this.tiltAngle.toFixed(2)),
+      colors: this.partColors,
+      roughness: this.partRoughness,
+      metalness: this.partMetalness
+    };
+  }
 
-    const crouchScaleY = 1.0 - this.crouchAmount * 0.46; // Squashes down to 54% height when crouching!
-    const crouchScaleXZ = 1.0 + this.crouchAmount * 0.22;
-    const effY = this.squash * crouchScaleY;
-    const effXZ = (1 / Math.sqrt(Math.max(0.4, this.squash))) * crouchScaleXZ;
-    this.bodyGroup.scale.set(effXZ, effY, effXZ);
-
-    // Cute Chibi waddle / run / crouch pose
-    const runCycle = time * Math.max(8, speed * 1.3);
-    if (isCrouching) {
-      // Cute ducking pose: head tucks forward, hands cover head!
-      this.headGroup.rotation.x = 0.35;
-      this.leftArm.position.set(-0.34, 1.05, 0.22);
-      this.rightArm.position.set(0.34, 1.05, 0.22);
-      this.leftLeg.position.z = Math.sin(runCycle * 1.3) * 0.14;
-      this.rightLeg.position.z = -Math.sin(runCycle * 1.3) * 0.14;
-      this.bodyGroup.position.y = 0;
-    } else if (isGrounded) {
-      this.headGroup.rotation.x = 0;
-      const swing = Math.sin(runCycle) * 0.22;
-      this.leftLeg.position.z = swing;
-      this.rightLeg.position.z = -swing;
-      this.leftArm.position.set(-0.4, 0.62, -swing);
-      this.rightArm.position.set(0.4, 0.62, swing);
-      this.bodyGroup.position.y = Math.abs(Math.sin(runCycle)) * 0.09;
-      this.bodyGroup.rotation.z = Math.cos(runCycle) * 0.05; // Cute chibi waddle!
-    } else {
-      // Jumping pose
-      this.headGroup.rotation.x = -0.15;
-      this.leftArm.position.set(-0.42, 0.88, 0);
-      this.rightArm.position.set(0.42, 0.88, 0);
-      this.leftLeg.position.z = -0.1;
-      this.rightLeg.position.z = 0.12;
-      this.bodyGroup.position.y = 0;
-      this.bodyGroup.rotation.z = 0;
+  applyRemoteAppearance(data) {
+    if (!data) return;
+    if (data.role && data.role !== this.role) {
+      this.setRole(data.role);
     }
-
-    // Hair bounce
-    this.hairDynamicParts.forEach((part, idx) => {
-      part.rotation.z = Math.sin(runCycle + idx) * 0.18;
-    });
+    if (data.poseId && data.poseId !== this.poseId) {
+      this.applyPose(data.poseId);
+    }
+    if (data.tiltAngle !== undefined) {
+      this.setTilt(data.tiltAngle);
+    }
+    if (Array.isArray(data.colors) && data.colors.length === 6) {
+      const partData = data.colors.map((c, idx) => ({
+        color: c,
+        roughness: Array.isArray(data.roughness) ? data.roughness[idx] : 0.4,
+        metalness: Array.isArray(data.metalness) ? data.metalness[idx] : 0.05
+      }));
+      this.setAllParts(partData);
+    }
   }
 }

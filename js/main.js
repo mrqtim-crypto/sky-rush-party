@@ -1,1273 +1,1458 @@
 import * as THREE from 'three';
 import { sfx } from './audio.js';
-import { CUSTOM_CATALOG, Character3D, getRandomAppearance } from './character.js';
 import { RoomNetwork } from './network.js';
-import {
-  TrackWorld,
-  TRACK_LENGTH,
-  ROW_LEN,
-  LANE_WIDTH,
-  TRACK_HALF_WIDTH
-} from './world.js';
+import { ChameleonAvatar, POSE_LIST } from './character.js';
+import { LandmarkWorld } from './world.js';
 
-const ITEMS_CATALOG = [
-  { id: 'mummy', name: '木乃伊繃帶', icon: '🤕' },
-  { id: 'scarab', name: '聖甲蟲飛索', icon: '🪲' },
-  { id: 'sandstorm', name: '法老沙暴扇', icon: '🌪️' },
-  { id: 'oil', name: '滑溜神油罐', icon: '🏺' }
-];
+const HIDE_PHASE_SECONDS = 90;  // 90 秒躲藏準備期
+const HUNT_PHASE_SECONDS = 270; // 4 分 30 秒 (270秒) 追捕倒數
 
-const AI_NAMES = [
-  '法老阿凱', '奈菲爾蒂', '沙漠泡芙', '荷魯斯小傑',
-  '貓神米亞', '聖甲蟲豆豆', '金字塔露露'
-];
+const BOT_NAMES = ['信義小籠包', '珍奶半糖少冰', '國父練舞哥', '藍白拖戰神', '大安森林鴿', '夜市臭豆腐'];
 
-class PyramidRushGame {
+class TaiwanChameleonGame {
   constructor() {
     this.canvas = document.getElementById('game-canvas');
-    this.state = 'lobby'; // 'lobby' | 'countdown' | 'racing' | 'result'
-    this.roomSeed = 202611;
-
-    const savedApp = localStorage.getItem('pyramid_appearance');
-    this.myAppearance = savedApp ? JSON.parse(savedApp) : {
-      gender: 'girl',
-      skinColor: '#ffe4d0',
-      hairStyle: 'bob',
-      hairColor: '#3b2820',
-      eyeStyle: 'starry',
-      eyeColor: '#2b2d42',
-      outfit: 'explorer',
-      outfitColor: '#f4a261',
-      backItem: 'backpack',
-      trail: 'gold'
-    };
-    this.myName = localStorage.getItem('pyramid_name') || '小法老';
-
-    this.input = {
-      steer: 0,
-      crouchHold: false,
-      keys: {}
-    };
-
-    // Lobby smart camera state
-    this.lobbyZoomMode = 'body'; // 'body' | 'head' | 'back'
-    this.previewRotationY = 0;
-    this.previewTargetRotY = 0;
-    this.previewJumpVel = 0;
-    this.previewY = 0;
-
-    this.shakeIntensity = 0;
-    this.localRunner = null;
-    this.aiRunners = [];
-    this.remoteRunners = new Map();
-
-    this.initThree();
-    this.initLobbyStage();
-    this.initCustomizerUI();
-    this.initControls();
-    this.initMultiplayer();
-
-    this.lastTime = performance.now();
-    requestAnimationFrame((t) => this.loop(t));
-  }
-
-  initThree() {
-    this.renderer = new THREE.WebGLRenderer({
-      canvas: this.canvas,
-      antialias: true,
-      powerPreference: 'high-performance'
-    });
-    this.renderer.setSize(window.innerWidth, window.innerHeight);
+    this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color('#e8b878');
-    this.scene.fog = new THREE.FogExp2('#e8b878', 0.009);
+    this.camera = new THREE.PerspectiveCamera(58, window.innerWidth / window.innerHeight, 0.1, 160);
 
-    this.camera = new THREE.PerspectiveCamera(
-      54,
-      window.innerWidth / window.innerHeight,
-      0.1,
-      240
-    );
+    // Lighting
+    const hemi = new THREE.HemisphereLight(0xe0f2fe, 0x1e293b, 0.95);
+    this.scene.add(hemi);
 
-    const hemiLight = new THREE.HemisphereLight('#fff8eb', '#8c5828', 1.3);
-    this.scene.add(hemiLight);
+    const dirLight = new THREE.DirectionalLight(0xfffbeb, 1.15);
+    dirLight.position.set(18, 32, 22);
+    dirLight.castShadow = true;
+    dirLight.shadow.mapSize.set(1024, 1024);
+    dirLight.shadow.camera.near = 2;
+    dirLight.shadow.camera.far = 90;
+    const d = 32;
+    dirLight.shadow.camera.left = -d;
+    dirLight.shadow.camera.right = d;
+    dirLight.shadow.camera.top = d;
+    dirLight.shadow.camera.bottom = -d;
+    this.scene.add(dirLight);
 
-    this.dirLight = new THREE.DirectionalLight('#fff2d6', 1.35);
-    this.dirLight.position.set(22, 42, 26);
-    this.dirLight.castShadow = true;
-    this.scene.add(this.dirLight);
+    this.world = new LandmarkWorld(this.scene);
 
-    this.world = new TrackWorld(this.scene);
-    this.world.buildTrack(this.roomSeed);
-    // Hide track in lobby so nothing ever blocks the character preview!
-    this.world.worldGroup.visible = false;
+    // Game State
+    this.screenState = 'lobby'; // 'lobby' | 'playing' | 'result'
+    this.phase = 'hide';        // 'hide' (90s) | 'hunt' (270s)
+    this.phaseTimer = HIDE_PHASE_SECONDS;
+    this.selectedMap = 'taipei101';
+    this.fillBots = true;
 
-    window.addEventListener('resize', () => {
-      this.camera.aspect = window.innerWidth / window.innerHeight;
-      this.camera.updateProjectionMatrix();
-      this.renderer.setSize(window.innerWidth, window.innerHeight);
-    });
+    // Local Player State
+    this.myAvatar = new ChameleonAvatar('百變小龍', 'chameleon');
+    this.scene.add(this.myAvatar.root);
+    this.myPos = new THREE.Vector3(0, 0, 6);
+    this.myVelY = 0;
+    this.myRotY = 0;
+    this.isGrounded = true;
+    this.isPositionLocked = false;
+    this.myScore = 0;
+    this.bobaCharges = 2;
+    this.bobaSpeedTimer = 0;
+    this.tauntCooldown = 0;
+    this.autoTauntTimer = 30;
+
+    // Hunter Attack & Penalty Cooldowns
+    this.attackCooldown = 0;
+    this.penaltyTimer = 0; // 4.0s stun when hitting a real scene prop!
+    this.radarCooldown = 0;
+
+    // Camera Orbit State
+    this.camYaw = 0;
+    this.camPitch = 0.38;
+    this.camDist = 5.6;
+
+    // Input State
+    this.joyVec = { x: 0, y: 0 };
+    this.keys = {};
+
+    // Other Participants (Remote Players + AI Bots)
+    this.otherPlayers = new Map(); // id -> { id, name, isBot, avatar, x, y, z, rotY, role, score, botTarget, botStateTimer }
+    this.smokeClouds = [];
+
+    this.setupNetwork();
+    this.setupUI();
+    this.setupControls();
+    this.parseUrlInviteParams();
+
+    // Build initial lobby background map
+    this.world.buildMap(this.selectedMap, 10101);
+    this.positionAvatarForLobby();
+
+    window.addEventListener('resize', () => this.onResize());
+    this.lastTime = performance.now();
+    requestAnimationFrame((t) => this.animate(t));
   }
 
-  initLobbyStage() {
-    this.lobbyGroup = new THREE.Group();
-    this.scene.add(this.lobbyGroup);
-
-    // Golden Pharaoh Pedestal placed in the UPPER half of the screen
-    const pedGeo = new THREE.CylinderGeometry(1.15, 1.35, 0.28, 28);
-    const pedMat = new THREE.MeshStandardMaterial({
-      color: '#c99352',
-      roughness: 0.55
-    });
-    const ped = new THREE.Mesh(pedGeo, pedMat);
-    ped.position.set(0, -0.14, 0);
-
-    const ringGeo = new THREE.TorusGeometry(1.22, 0.055, 10, 32);
-    const ringMat = new THREE.MeshStandardMaterial({
-      color: '#ffd166',
-      metalness: 0.65,
-      roughness: 0.25
-    });
-    const ring = new THREE.Mesh(ringGeo, ringMat);
-    ring.rotation.x = Math.PI / 2;
-    ring.position.y = 0.01;
-    this.lobbyRing = ring;
-
-    this.lobbyGroup.add(ped, ring);
-    this.lobbyGroup.position.set(0, 1.9, 0);
-
-    this.previewChar = new Character3D(this.myAppearance, this.myName, true);
-    this.lobbyGroup.add(this.previewChar.root);
-  }
-
-  initCustomizerUI() {
-    const nameInput = document.getElementById('player-name');
-    nameInput.value = this.myName;
-    nameInput.addEventListener('input', () => {
-      this.myName = nameInput.value.trim() || '小法老';
-      localStorage.setItem('pyramid_name', this.myName);
-      this.previewChar.updateNameTag(this.myName);
-    });
-
-    // Category Tabs with Smart Camera Zoom & Auto-Turn!
-    const tabBtns = document.querySelectorAll('.tab-btn');
-    tabBtns.forEach((btn) => {
-      btn.addEventListener('click', () => {
-        sfx.jump();
-        tabBtns.forEach((b) => b.classList.remove('active'));
-        btn.classList.add('active');
-        const tabId = btn.dataset.tab;
-        document.querySelectorAll('.tab-pane').forEach((p) => p.classList.remove('active'));
-        document.getElementById(`pane-${tabId}`).classList.add('active');
-
-        if (tabId === 'hair' || tabId === 'eyes') {
-          this.lobbyZoomMode = 'head';
-          this.previewTargetRotY = 0;
-        } else if (tabId === 'extra') {
-          this.lobbyZoomMode = 'back';
-          this.previewTargetRotY = Math.PI; // Turn around to show backpack/wings!
-        } else {
-          this.lobbyZoomMode = 'body';
-          this.previewTargetRotY = 0;
-        }
-      });
-    });
-
-    const renderOptions = (containerId, list, key) => {
-      const container = document.getElementById(containerId);
-      container.innerHTML = '';
-      list.forEach((item) => {
-        const div = document.createElement('div');
-        div.className = 'opt-card' + (this.myAppearance[key] === item.id ? ' selected' : '');
-        div.textContent = item.label;
-        div.addEventListener('click', () => {
-          sfx.itemPickup();
-          this.myAppearance[key] = item.id;
-          this.saveAndRefreshPreview();
-          renderAllOptions();
-        });
-        container.appendChild(div);
-      });
-    };
-
-    const renderSwatches = (containerId, colors, key) => {
-      const container = document.getElementById(containerId);
-      container.innerHTML = '';
-      colors.forEach((hex) => {
-        const sw = document.createElement('div');
-        sw.className = 'swatch' + (this.myAppearance[key] === hex ? ' selected' : '');
-        sw.style.backgroundColor = hex;
-        sw.addEventListener('click', () => {
-          sfx.jump();
-          this.myAppearance[key] = hex;
-          this.saveAndRefreshPreview();
-          renderAllOptions();
-        });
-        container.appendChild(sw);
-      });
-    };
-
-    const renderAllOptions = () => {
-      renderOptions('gender-options', CUSTOM_CATALOG.genders, 'gender');
-      renderSwatches('skin-colors', CUSTOM_CATALOG.skinColors, 'skinColor');
-      renderOptions('hair-options', CUSTOM_CATALOG.hairStyles, 'hairStyle');
-      renderSwatches('hair-colors', CUSTOM_CATALOG.hairColors, 'hairColor');
-      renderOptions('eye-options', CUSTOM_CATALOG.eyeStyles, 'eyeStyle');
-      renderSwatches('eye-colors', CUSTOM_CATALOG.eyeColors, 'eyeColor');
-      renderOptions('outfit-options', CUSTOM_CATALOG.outfits, 'outfit');
-      renderSwatches('outfit-colors', CUSTOM_CATALOG.outfitColors, 'outfitColor');
-      renderOptions('back-options', CUSTOM_CATALOG.backItems, 'backItem');
-      renderOptions('trail-options', CUSTOM_CATALOG.trails, 'trail');
-    };
-
-    renderAllOptions();
-
-    document.getElementById('btn-random-look').addEventListener('click', () => {
-      sfx.spring();
-      this.myAppearance = getRandomAppearance();
-      this.saveAndRefreshPreview();
-      renderAllOptions();
-      this.previewJumpVel = 7.5;
-    });
-
-    document.getElementById('btn-pose-jump').addEventListener('click', () => {
-      sfx.jump();
-      this.previewJumpVel = 8.5;
-      this.previewChar.squash = 0.68;
-    });
-
-    // Touch / Drag rotation on preview stage
-    const touchZone = document.getElementById('preview-touch-zone');
-    let dragging = false;
-    let lastX = 0;
-    touchZone.addEventListener('pointerdown', (e) => {
-      if (e.target.tagName === 'BUTTON') return;
-      dragging = true;
-      lastX = e.clientX;
-    });
-    window.addEventListener('pointermove', (e) => {
-      if (!dragging) return;
-      const dx = e.clientX - lastX;
-      lastX = e.clientX;
-      this.previewRotationY += dx * 0.014;
-      this.previewTargetRotY = this.previewRotationY;
-    });
-    window.addEventListener('pointerup', () => {
-      dragging = false;
-    });
-
-    document.getElementById('btn-start-game').addEventListener('click', () => {
-      sfx.init();
-      this.startMatch();
-    });
-
-    document.getElementById('btn-rematch').addEventListener('click', () => {
-      this.roomSeed = this.network.sendAction('new_race');
-      this.world.buildTrack(this.roomSeed);
-      this.startMatch();
-    });
-
-    document.getElementById('btn-back-lobby').addEventListener('click', () => {
-      this.switchToLobby();
-    });
-  }
-
-  saveAndRefreshPreview() {
-    localStorage.setItem('pyramid_appearance', JSON.stringify(this.myAppearance));
-    this.previewChar.setAppearance(this.myAppearance);
-    this.previewChar.squash = 1.2;
-  }
-
-  initControls() {
-    window.addEventListener('keydown', (e) => {
-      this.input.keys[e.code] = true;
-      if (this.state === 'racing') {
-        if (e.code === 'Space' || e.code === 'KeyW' || e.code === 'ArrowUp') {
-          e.preventDefault();
-          this.triggerJump();
-        } else if (e.code === 'KeyS' || e.code === 'ArrowDown' || e.code === 'ControlLeft') {
-          e.preventDefault();
-          this.triggerCrouch(true);
-        } else if (e.code === 'KeyE' || e.code === 'KeyF' || e.code === 'Enter') {
-          e.preventDefault();
-          this.triggerUseItem();
-        }
-      }
-    });
-
-    window.addEventListener('keyup', (e) => {
-      this.input.keys[e.code] = false;
-      if (e.code === 'KeyS' || e.code === 'ArrowDown' || e.code === 'ControlLeft') {
-        this.input.crouchHold = false;
-      }
-    });
-
-    // Virtual Joystick
-    const joyBase = document.getElementById('joystick-base');
-    const joyKnob = document.getElementById('joystick-knob');
-    let joyPointerId = null;
-    let joyCenterX = 0;
-
-    const updateJoystick = (clientX) => {
-      const maxOffset = 46;
-      const dx = Math.max(-maxOffset, Math.min(maxOffset, clientX - joyCenterX));
-      joyKnob.style.transform = `translateX(${dx}px)`;
-      this.input.steer = dx / maxOffset;
-    };
-
-    joyBase.addEventListener('pointerdown', (e) => {
-      joyPointerId = e.pointerId;
-      const rect = joyBase.getBoundingClientRect();
-      joyCenterX = rect.left + rect.width / 2;
-      joyBase.setPointerCapture(e.pointerId);
-      updateJoystick(e.clientX);
-    });
-
-    joyBase.addEventListener('pointermove', (e) => {
-      if (e.pointerId === joyPointerId) {
-        updateJoystick(e.clientX);
-      }
-    });
-
-    const resetJoystick = (e) => {
-      if (e.pointerId === joyPointerId) {
-        joyPointerId = null;
-        joyKnob.style.transform = 'translateX(0px)';
-        this.input.steer = 0;
-      }
-    };
-    joyBase.addEventListener('pointerup', resetJoystick);
-    joyBase.addEventListener('pointercancel', resetJoystick);
-
-    // Jump Button
-    document.getElementById('btn-jump').addEventListener('pointerdown', (e) => {
-      e.preventDefault();
-      this.triggerJump();
-    });
-
-    // Crouch Button
-    const crouchBtn = document.getElementById('btn-crouch');
-    crouchBtn.addEventListener('pointerdown', (e) => {
-      e.preventDefault();
-      crouchBtn.classList.add('active-hold');
-      this.triggerCrouch(true);
-    });
-    const endCrouchHold = () => {
-      crouchBtn.classList.remove('active-hold');
-      this.input.crouchHold = false;
-    };
-    crouchBtn.addEventListener('pointerup', endCrouchHold);
-    crouchBtn.addEventListener('pointercancel', endCrouchHold);
-
-    // Item Button
-    document.getElementById('btn-use-item').addEventListener('pointerdown', (e) => {
-      e.preventDefault();
-      this.triggerUseItem();
-    });
-  }
-
-  initMultiplayer() {
-    const statusEl = document.getElementById('online-status');
-    const roomInput = document.getElementById('room-input');
-
-    const params = new URLSearchParams(window.location.search);
-    const urlRoom = params.get('room');
-    if (urlRoom) {
-      roomInput.value = urlRoom.toUpperCase().slice(0, 6);
-    }
-
-    this.network = new RoomNetwork({
-      onStatus: (txt) => {
-        statusEl.textContent = txt;
+  setupNetwork() {
+    this.net = new RoomNetwork({
+      onStatus: (text) => {
+        const el = document.getElementById('online-status');
+        if (el) el.textContent = text;
       },
-      onWelcome: ({ seed }) => {
-        this.roomSeed = seed;
-        this.world.buildTrack(this.roomSeed);
+      onAuthFailed: (msg) => {
+        this.showToast(msg, true);
       },
-      onPlayerJoined: (player) => {
-        this.addFeedToast(`👋 [${player.name}] 加入了金字塔探險！`);
+      onRosterUpdate: (players, roomConfig, isHost, myId) => {
+        this.renderLobbyRoster(players, roomConfig, isHost, myId);
       },
-      onPlayerLeft: (playerId) => {
-        const rem = this.remoteRunners.get(playerId);
-        if (rem) {
-          this.scene.remove(rem.char.root);
-          this.remoteRunners.delete(playerId);
-        }
+      onMatchStart: (payload) => {
+        this.startMatchFromHostPayload(payload);
       },
       onRemoteState: (playerId, state) => {
-        this.updateRemoteRunner(playerId, state);
+        this.applyRemotePlayerState(playerId, state);
       },
       onRemoteAction: (playerId, action, payload) => {
         this.handleRemoteAction(playerId, action, payload);
-      },
-      onNewRace: (newSeed) => {
-        this.roomSeed = newSeed;
-        this.world.buildTrack(this.roomSeed);
+      }
+    });
+  }
+
+  parseUrlInviteParams() {
+    const params = new URLSearchParams(window.location.search);
+    const urlRoom = params.get('room');
+    const urlPwd = params.get('pwd');
+
+    const roomInput = document.getElementById('room-input');
+    const pwdInput = document.getElementById('room-pwd-input');
+    const nameInput = document.getElementById('player-name');
+
+    if (urlRoom && roomInput) {
+      roomInput.value = urlRoom.toUpperCase().slice(0, 8);
+    }
+    if (urlPwd && pwdInput) {
+      pwdInput.value = urlPwd.slice(0, 8);
+    }
+
+    // Randomize default nickname suffix slightly so multiple tabs have distinct names
+    if (nameInput && nameInput.value === '百變小龍') {
+      const suffixes = ['王', '哥', '俠', '星', '仔', '寶'];
+      nameInput.value = '變色龍' + suffixes[Math.floor(Math.random() * suffixes.length)] + Math.floor(Math.random() * 90 + 10);
+    }
+
+    this.connectToCurrentRoomInputs();
+  }
+
+  connectToCurrentRoomInputs() {
+    const roomId = document.getElementById('room-input')?.value || 'TW101';
+    const password = document.getElementById('room-pwd-input')?.value || '';
+    const playerName = document.getElementById('player-name')?.value || '變色龍玩家';
+
+    this.myAvatar.name = playerName;
+    this.net.joinOrCreateRoom({
+      roomId,
+      password,
+      playerName,
+      mapId: this.selectedMap,
+      fillBots: this.fillBots
+    });
+  }
+
+  setupUI() {
+    // Lobby Preview Pose Buttons
+    document.querySelectorAll('[data-preview-pose]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        sfx.poseChange();
+        document.querySelectorAll('[data-preview-pose]').forEach((b) => b.classList.remove('active'));
+        btn.classList.add('active');
+        const pose = btn.getAttribute('data-preview-pose');
+        this.myAvatar.applyPose(pose);
+        if (pose === 'cone') {
+          this.myAvatar.setAllParts([
+            { color: '#ea580c', roughness: 0.4 },
+            { color: '#ea580c', roughness: 0.4 },
+            { color: '#f8fafc', roughness: 0.3 },
+            { color: '#ea580c', roughness: 0.4 },
+            { color: '#ea580c', roughness: 0.4 },
+            { color: '#1e293b', roughness: 0.8 }
+          ]);
+        } else if (pose === 'ball') {
+          this.myAvatar.setSingleColor('#eab308', 0.25, 0.7);
+        } else if (pose === 'box') {
+          this.myAvatar.setAllParts([
+            { color: '#0284c7', roughness: 0.4 },
+            { color: '#16a34a', roughness: 0.4 },
+            { color: '#16a34a', roughness: 0.4 },
+            { color: '#16a34a', roughness: 0.4 },
+            { color: '#334155', roughness: 0.7 },
+            { color: '#334155', roughness: 0.7 }
+          ]);
+        } else if (pose === 'guard') {
+          this.myAvatar.setAllParts([
+            { color: '#e2e8f0', roughness: 0.2 },
+            { color: '#1d4ed8', roughness: 0.4 },
+            { color: '#1d4ed8', roughness: 0.4 },
+            { color: '#1d4ed8', roughness: 0.4 },
+            { color: '#1d4ed8', roughness: 0.4 },
+            { color: '#991b1b', roughness: 0.6 }
+          ]);
+        } else {
+          this.myAvatar.resetToPureWhite();
+        }
+      });
+    });
+
+    // Join / Update Room Button
+    document.getElementById('btn-join-room')?.addEventListener('click', () => {
+      sfx.readyBeep(true);
+      this.connectToCurrentRoomInputs();
+    });
+
+    // Player Name & Password live update
+    document.getElementById('player-name')?.addEventListener('change', (e) => {
+      this.net.updateMyProfile({ name: e.target.value });
+    });
+    document.getElementById('room-pwd-input')?.addEventListener('change', (e) => {
+      if (this.net.isHost) {
+        this.net.updateMyProfile({ password: e.target.value });
+        this.showToast(e.target.value ? `🔒 已設定房間密碼：${e.target.value}` : '🔓 已取消房間密碼');
       }
     });
 
-    const doJoin = () => {
-      const code = roomInput.value.trim().toUpperCase() || 'PARTY1';
-      roomInput.value = code;
-      this.network.joinRoom(code, {
-        name: this.myName,
-        appearance: this.myAppearance
-      });
-    };
+    // One-Click Share Invite Link (with Room ID & Password)
+    document.getElementById('btn-share-link')?.addEventListener('click', async () => {
+      sfx.paintBlend();
+      const roomId = (document.getElementById('room-input')?.value || 'TW101').trim().toUpperCase();
+      const pwd = (document.getElementById('room-pwd-input')?.value || '').trim();
 
-    doJoin();
+      // Update room password on host if not yet synced
+      if (this.net.isHost && pwd !== this.net.password) {
+        this.net.updateMyProfile({ password: pwd });
+      }
 
-    document.getElementById('btn-join-room').addEventListener('click', () => {
-      sfx.itemPickup();
-      doJoin();
+      const baseUrl = `${window.location.origin}${window.location.pathname}`;
+      const params = new URLSearchParams();
+      params.set('room', roomId);
+      if (pwd) params.set('pwd', pwd);
+      const shareUrl = `${baseUrl}?${params.toString()}`;
+      const shareText = `🦎 來玩《台灣變色龍：地標大躲貓貓》！房號：${roomId}${pwd ? `（密碼：${pwd}）` : ''} 點連結直接進房：`;
+
+      try {
+        await navigator.clipboard.writeText(`${shareText} ${shareUrl}`);
+        this.showToast('✅ 已複製專屬房間連結！傳給朋友點開即可進房！');
+      } catch (e) {
+        this.showToast(`🔗 分享網址：${shareUrl}`);
+      }
+
+      if (navigator.share) {
+        try {
+          await navigator.share({
+            title: '台灣變色龍：地標大躲貓貓 3D',
+            text: shareText,
+            url: shareUrl
+          });
+        } catch (err) {}
+      }
     });
 
-    const copyBtn = document.getElementById('btn-copy-invite');
-    if (copyBtn) {
-      copyBtn.addEventListener('click', () => {
-        sfx.itemPickup();
-        const code = roomInput.value.trim().toUpperCase() || 'PARTY1';
-        const inviteUrl = `${window.location.origin}${window.location.pathname}?room=${code}`;
-        navigator.clipboard?.writeText(inviteUrl);
-        const toast = document.getElementById('invite-copied-toast');
-        if (toast) {
-          toast.classList.remove('hidden');
-          setTimeout(() => toast.classList.add('hidden'), 3000);
+    // Map Selector Cards
+    document.querySelectorAll('.map-card').forEach((card) => {
+      card.addEventListener('click', () => {
+        if (!this.net.isHost) {
+          this.showToast('👑 只有房主可以切換地圖場景喔！', true);
+          return;
         }
+        sfx.colorPick();
+        const mapId = card.getAttribute('data-map') || 'taipei101';
+        this.selectedMap = mapId;
+        document.querySelectorAll('.map-card').forEach((c) => c.classList.remove('active'));
+        card.classList.add('active');
+        this.world.buildMap(this.selectedMap, 10101);
+        this.net.updateMyProfile({ mapId: this.selectedMap });
+      });
+    });
+
+    // AI Bot Toggle
+    document.getElementById('chk-fill-bots')?.addEventListener('change', (e) => {
+      if (!this.net.isHost) {
+        e.target.checked = this.fillBots;
+        return;
+      }
+      this.fillBots = e.target.checked;
+      this.net.updateMyProfile({ fillBots: this.fillBots });
+    });
+
+    // Guest Ready Button
+    document.getElementById('btn-guest-ready')?.addEventListener('click', () => {
+      const nextReady = !this.net.myReady;
+      sfx.readyBeep(nextReady);
+      this.net.updateMyProfile({ ready: nextReady });
+      const btn = document.getElementById('btn-guest-ready');
+      if (btn) {
+        btn.classList.toggle('is-ready', nextReady);
+        btn.textContent = nextReady
+          ? '✅ 已準備完成！（點擊可取消・等待房主開始）'
+          : '⏳ 點擊準備完成（等待房主開始）';
+      }
+    });
+
+    // Host Start Match Button
+    document.getElementById('btn-host-start')?.addEventListener('click', () => {
+      if (!this.net.isHost) return;
+      const humans = Array.from(this.net.roomPlayers.values());
+      const unready = humans.filter((p) => !p.isHost && !p.ready);
+      if (unready.length > 0) {
+        this.showToast(`⚠️ 還有 ${unready.length} 位玩家尚未點擊準備，仍為您強制開局！`);
+      }
+
+      // Build full participants list (Human players + AI bots if enabled)
+      const participants = humans.map((h) => ({
+        id: h.id,
+        name: h.name,
+        isBot: false
+      }));
+
+      if (this.fillBots) {
+        const targetCount = Math.max(6, participants.length + 1);
+        let botIdx = 0;
+        while (participants.length < targetCount) {
+          participants.push({
+            id: `bot_${botIdx + 1}`,
+            name: BOT_NAMES[botIdx % BOT_NAMES.length],
+            isBot: true
+          });
+          botIdx++;
+        }
+      } else if (participants.length < 2) {
+        // Ensure at least 1 AI opponent if solo testing with bots unchecked
+        participants.push({
+          id: 'bot_1',
+          name: '信義小籠包(AI)',
+          isBot: true
+        });
+      }
+
+      this.net.hostStartMatch(participants);
+    });
+
+    // Build In-Game Pose Buttons Row
+    const poseRow = document.getElementById('pose-buttons-row');
+    if (poseRow) {
+      poseRow.innerHTML = '';
+      POSE_LIST.forEach((p) => {
+        const btn = document.createElement('button');
+        btn.className = `pose-pill-btn ${p.id === 'stand' ? 'active' : ''}`;
+        btn.dataset.poseId = p.id;
+        btn.innerHTML = `${p.icon} ${p.name}`;
+        btn.addEventListener('click', () => {
+          this.selectChameleonPose(p.id);
+        });
+        poseRow.appendChild(btn);
       });
     }
-  }
 
-  updateRemoteRunner(playerId, st) {
-    let runner = this.remoteRunners.get(playerId);
-    if (!runner) {
-      const char = new Character3D(st.appearance || getRandomAppearance(), st.name || '探險家', false);
-      this.scene.add(char.root);
-      runner = {
-        id: playerId,
-        name: st.name || '探險家',
-        isAI: false,
-        isLocal: false,
-        char,
-        u: st.u || 0,
-        h: st.h || 0,
-        s: st.s || 0,
-        vu: 0,
-        vh: 0,
-        vs: 12,
-        isGrounded: true,
-        crouchTimer: 0,
-        stunTimer: 0,
-        mummyTimer: 0,
-        finished: false,
-        finishTime: 0
-      };
-      this.remoteRunners.set(playerId, runner);
-    }
-    runner.u = st.u ?? runner.u;
-    runner.h = st.h ?? runner.h;
-    runner.s = st.s ?? runner.s;
-    runner.isGrounded = st.isGrounded ?? true;
-    runner.crouchTimer = st.crouchTimer ?? 0;
-    runner.stunTimer = st.stunTimer ?? 0;
-    runner.mummyTimer = st.mummyTimer ?? 0;
-    runner.finished = st.finished ?? false;
-  }
+    // Tilt Slider & Reset
+    const tiltSlider = document.getElementById('tilt-slider');
+    tiltSlider?.addEventListener('input', (e) => {
+      const deg = Number(e.target.value || 0);
+      this.myAvatar.setTilt((deg * Math.PI) / 180);
+    });
+    document.getElementById('btn-reset-tilt')?.addEventListener('click', () => {
+      if (tiltSlider) tiltSlider.value = '0';
+      this.myAvatar.setTilt(0);
+    });
 
-  handleRemoteAction(playerId, action, payload) {
-    if (action === 'sandstorm' && this.localRunner) {
-      if (Math.abs(this.localRunner.s - payload.s) < 6.0) {
-        const dir = this.localRunner.u >= payload.u ? 1 : -1;
-        this.applyKnockback(this.localRunner, dir * 15, 5.5, `${payload.byName} 的法老沙暴`);
-      }
-    } else if (action === 'mummy' && this.localRunner) {
-      if (this.localRunner.s > payload.s && this.localRunner.s - payload.s < 18.0) {
-        this.localRunner.mummyTimer = 2.4;
-        sfx.bump();
-        this.addFeedToast(`🤕 被 [${payload.byName}] 的木乃伊繃帶纏住了！`);
-      }
-    } else if (action === 'switch_trap' && this.localRunner) {
-      this.world.spawnHighFireBeam(payload.ambushS);
-      if (Math.abs(this.localRunner.s - payload.ambushS) < 15) {
-        this.addFeedToast(`😈 前方 [${payload.byName}] 踩下陷害開關！小心火焰！`);
-      }
-    }
-  }
+    // Lock Position Toggle
+    document.getElementById('btn-lock-pos')?.addEventListener('click', () => {
+      this.togglePositionLock(!this.isPositionLocked);
+    });
 
-  createRunnerObj(id, name, appearance, isLocal = false, isAI = false, startLane = 0) {
-    const char = new Character3D(appearance, name, isLocal);
-    this.scene.add(char.root);
-    return {
-      id,
-      name,
-      isLocal,
-      isAI,
-      char,
-      u: startLane * LANE_WIDTH,
-      h: 0,
-      s: 2,
-      vu: 0,
-      vh: 0,
-      vs: 0,
-      isGrounded: true,
-      crouchTimer: 0,
-      stunTimer: 0,
-      mummyTimer: 0,
-      boostTimer: 0,
-      slipstream: false,
-      jostleCooldown: 0,
-      item: null,
-      knockouts: 0,
-      finished: false,
-      finishTime: 0,
-      aiTargetU: startLane * LANE_WIDTH,
-      aiDecisionTimer: 0.2 + Math.random() * 0.4
+    // 1-Click Surroundings Auto-Camo Button!
+    document.getElementById('btn-auto-camo')?.addEventListener('click', () => {
+      this.triggerSurroundingsAutoCamo();
+    });
+
+    // Boba Smoke Escape Button
+    document.getElementById('btn-boba-smoke')?.addEventListener('click', () => {
+      this.triggerBobaSmoke();
+    });
+
+    // Taiwanese Taunt Button
+    document.getElementById('btn-taunt')?.addEventListener('click', () => {
+      this.triggerTaunt(true);
+    });
+
+    // Jump Buttons
+    document.getElementById('btn-jump-cham')?.addEventListener('click', () => this.triggerJump());
+    document.getElementById('btn-jump-hunt')?.addEventListener('click', () => this.triggerJump());
+
+    // Hunter Blue-White Slipper Attack Button!
+    document.getElementById('btn-slipper-attack')?.addEventListener('click', () => {
+      this.triggerHunterSlipperAttack();
+    });
+
+    // Hunter Radar Scan Button
+    document.getElementById('btn-radar-scan')?.addEventListener('click', () => {
+      this.triggerHunterRadar();
+    });
+
+    // Host Skip Hide Phase Buttons
+    const skipHandler = () => {
+      if (this.phase === 'hide') {
+        this.enterHuntPhase();
+        this.net.sendAction('skip_hide', {});
+      }
     };
+    document.getElementById('btn-skip-hide')?.addEventListener('click', skipHandler);
+    document.getElementById('btn-chameleon-skip-hide')?.addEventListener('click', skipHandler);
+
+    // Back to Lobby from Result Screen
+    document.getElementById('btn-back-lobby')?.addEventListener('click', () => {
+      this.returnToLobby();
+    });
   }
 
-  clearMatchRunners() {
-    if (this.localRunner) {
-      this.scene.remove(this.localRunner.char.root);
-      this.localRunner = null;
-    }
-    this.aiRunners.forEach((bot) => this.scene.remove(bot.char.root));
-    this.aiRunners = [];
-  }
-
-  startMatch() {
-    this.clearMatchRunners();
-    this.lobbyGroup.visible = false;
-    this.world.worldGroup.visible = true;
-
-    document.getElementById('lobby-screen').classList.remove('active');
-    document.getElementById('result-screen').classList.remove('active');
-    document.getElementById('hud-screen').classList.add('active');
-    document.getElementById('event-feed').innerHTML = '';
-
-    this.localRunner = this.createRunnerObj(
-      'local',
-      this.myName,
-      this.myAppearance,
-      true,
-      false,
-      0
-    );
-    this.updateItemHUD();
-
-    const lanes = [-2, -1, 1, 2, -1.5, 1.5, -0.5];
-    const remoteCount = this.remoteRunners.size;
-    const botCount = Math.max(0, 7 - remoteCount);
-
-    for (let i = 0; i < botCount; i++) {
-      const bot = this.createRunnerObj(
-        `bot_${i}`,
-        AI_NAMES[i % AI_NAMES.length],
-        getRandomAppearance(),
-        false,
-        true,
-        lanes[i % lanes.length]
-      );
-      bot.s = 2 + (i % 2) * 1.4;
-      this.aiRunners.push(bot);
-    }
-
-    this.state = 'countdown';
-    this.runCountdown();
-  }
-
-  runCountdown() {
-    const banner = document.getElementById('center-banner');
-    banner.classList.remove('hidden');
-    let count = 3;
-    banner.textContent = count;
-    sfx.countdown(false);
-
-    const timer = setInterval(() => {
-      count--;
-      if (count > 0) {
-        banner.textContent = count;
-        sfx.countdown(false);
-      } else if (count === 0) {
-        banner.textContent = 'GO! 出發！';
-        sfx.countdown(true);
-        this.state = 'racing';
-        this.raceStartClock = performance.now();
-      } else {
-        banner.classList.add('hidden');
-        clearInterval(timer);
+  renderLobbyRoster(players, roomConfig, isHost, myId) {
+    // Sync map selection UI if Guest
+    if (!isHost && roomConfig) {
+      if (roomConfig.mapId && roomConfig.mapId !== this.selectedMap) {
+        this.selectedMap = roomConfig.mapId;
+        this.world.buildMap(this.selectedMap, 10101);
       }
-    }, 750);
-  }
-
-  switchToLobby() {
-    this.clearMatchRunners();
-    this.world.worldGroup.visible = false;
-    this.lobbyGroup.visible = true;
-    this.state = 'lobby';
-    document.getElementById('hud-screen').classList.remove('active');
-    document.getElementById('result-screen').classList.remove('active');
-    document.getElementById('lobby-screen').classList.add('active');
-  }
-
-  getAllRunners() {
-    const list = [];
-    if (this.localRunner) list.push(this.localRunner);
-    this.remoteRunners.forEach((r) => list.push(r));
-    this.aiRunners.forEach((b) => list.push(b));
-    return list;
-  }
-
-  // ================= JUMP, CROUCH & ITEMS =================
-  triggerJump() {
-    const r = this.localRunner;
-    if (!r || this.state !== 'racing' || r.stunTimer > 0) return;
-
-    if (r.mummyTimer > 0) {
-      // Jumping faster breaks free of Mummy Wrap!
-      r.mummyTimer = Math.max(0, r.mummyTimer - 0.55);
-      r.char.squash = 1.18;
-      sfx.jump();
-      this.addFeedToast('🤕 奮力掙脫木乃伊繃帶中！');
-      return;
+      document.querySelectorAll('.map-card').forEach((c) => {
+        c.classList.toggle('active', c.getAttribute('data-map') === this.selectedMap);
+      });
+      const botChk = document.getElementById('chk-fill-bots');
+      if (botChk && roomConfig.fillBots !== undefined) {
+        botChk.checked = roomConfig.fillBots;
+      }
     }
 
-    if (r.isGrounded) {
-      r.vh = 13.8;
-      r.isGrounded = false;
-      r.crouchTimer = 0;
-      this.input.crouchHold = false;
-      r.char.squash = 1.32;
-      sfx.jump();
+    const rosterEl = document.getElementById('roster-list');
+    const readyCountEl = document.getElementById('ready-counter');
+    if (rosterEl) {
+      rosterEl.innerHTML = '';
+      let readyCount = 0;
+      players.forEach((p) => {
+        if (p.ready || p.isHost) readyCount++;
+        const row = document.createElement('div');
+        row.className = 'roster-item';
+        const roleIcon = p.isHost ? '👑 房主' : '👤 玩家';
+        const meTag = p.id === myId ? ' (你)' : '';
+        const statusClass = p.ready || p.isHost ? 'ready' : 'wait';
+        const statusText = p.isHost ? '👑 房主就緒' : p.ready ? '✅ 已準備' : '⏳ 準備中';
+        row.innerHTML = `
+          <span class="roster-name">${roleIcon}・${p.name}${meTag}</span>
+          <span class="roster-status ${statusClass}">${statusText}</span>
+        `;
+        rosterEl.appendChild(row);
+      });
+      if (readyCountEl) {
+        readyCountEl.textContent = `已準備 ${readyCount}/${players.length}`;
+      }
+    }
+
+    // Show Host Start vs Guest Ready button
+    const hostBtn = document.getElementById('btn-host-start');
+    const guestBtn = document.getElementById('btn-guest-ready');
+    if (hostBtn && guestBtn) {
+      hostBtn.classList.toggle('hidden', !isHost);
+      guestBtn.classList.toggle('hidden', isHost);
     }
   }
 
-  triggerCrouch(hold = false) {
-    const r = this.localRunner;
-    if (!r || this.state !== 'racing' || r.stunTimer > 0) return;
+  // ==================== MATCH INITIALIZATION ====================
+  startMatchFromHostPayload(payload) {
+    sfx.countdown(true);
+    this.selectedMap = payload.mapId || 'taipei101';
+    this.world.buildMap(this.selectedMap, payload.seed || 12345);
 
-    if (hold) this.input.crouchHold = true;
-    r.crouchTimer = 0.85;
-    if (!r.isGrounded && r.vh > -18) {
-      r.vh = -20.0;
-    }
-    sfx.playTone(320, 180, 0.12, 'sine', 0.12);
-  }
+    this.otherPlayers.forEach((p) => this.scene.remove(p.avatar.root));
+    this.otherPlayers.clear();
 
-  triggerUseItem() {
-    const r = this.localRunner;
-    if (!r || !r.item || this.state !== 'racing') return;
-    this.activateRunnerItem(r, r.item);
-    r.item = null;
-    this.updateItemHUD();
-  }
+    const hunterSet = new Set(payload.initialHunterIds || []);
+    const participants = payload.participants || [];
 
-  activateRunnerItem(r, item) {
-    if (item.id === 'mummy') {
-      // Wrap the runner ahead of you in mummy bandages!
-      let target = null;
-      for (const other of this.getAllRunners()) {
-        if (other !== r && !other.finished && other.s > r.s && (!target || other.s < target.s)) {
-          target = other;
-        }
-      }
-      if (target) {
-        target.mummyTimer = 2.5;
-        target.vs *= 0.5;
-        r.knockouts++;
-        if (r.isLocal) {
-          sfx.stomp();
-          this.addFeedToast(`🤕 丟出【木乃伊繃帶】纏住了 [${target.name}]！`);
-          this.network.sendAction('mummy', { s: r.s, byName: r.name });
-        } else if (target.isLocal) {
-          sfx.bump();
-          this.addFeedToast(`🤕 被 [${r.name}] 的木乃伊繃帶纏住了！(連按跳躍掙脫)`);
-        }
-      } else {
-        r.boostTimer = 1.6;
-        if (r.isLocal) this.addFeedToast('🤕 前方無人，繃帶化為加速衝刺！');
-      }
-    } else if (item.id === 'scarab') {
-      // Grapple to runner ahead: pull yourself forward & yank them back!
-      let target = null;
-      for (const other of this.getAllRunners()) {
-        if (other !== r && !other.finished && other.s > r.s && (!target || other.s < target.s)) {
-          target = other;
-        }
-      }
-      r.boostTimer = 2.2;
-      if (target) {
-        target.vs *= 0.45;
-        target.stunTimer = 0.5;
-        r.knockouts++;
-        if (r.isLocal) {
-          sfx.boost();
-          this.addFeedToast(`🪲 【聖甲蟲飛索】拉住 [${target.name}] 強力超車！`);
-        } else if (target.isLocal) {
-          sfx.bump();
-          this.addFeedToast(`🪲 被 [${r.name}] 的聖甲蟲飛索往後扯了！`);
-        }
-      } else if (r.isLocal) {
-        sfx.boost();
-        this.addFeedToast('🪲 聖甲蟲飛索全速推進！');
-      }
-    } else if (item.id === 'sandstorm') {
-      // Blow all nearby runners strongly sideways into traps/pits!
-      this.world.spawnShockwave(r.u, r.h, r.s, '#ffd166');
-      if (r.isLocal) {
-        sfx.slam();
-        this.shakeIntensity = 0.35;
-        this.addFeedToast('🌪️ 揮動【法老沙暴扇】把周圍對手全部吹歪！');
-        this.network.sendAction('sandstorm', { u: r.u, s: r.s, byName: r.name });
-      }
-      for (const other of this.getAllRunners()) {
-        if (other === r || other.finished) continue;
-        if (Math.abs(other.s - r.s) < 6.0) {
-          const dir = other.u >= r.u ? 1 : -1;
-          this.applyKnockback(other, dir * 16.0, 5.5, `${r.name} 的沙暴扇`);
-          r.knockouts++;
-        }
-      }
-    } else if (item.id === 'oil') {
-      this.world.spawnOilSlick(r.u, Math.max(3, r.s - 2.2), r.id);
-      if (r.isLocal) {
-        sfx.jump();
-        this.addFeedToast('🏺 在身後倒下了【滑溜神油】陷害追兵！');
-      }
-    }
-  }
+    // Determine my role
+    const amIHunter = hunterSet.has(this.net.myId);
+    this.myScore = 0;
+    this.bobaCharges = 2;
+    this.bobaSpeedTimer = 0;
+    this.attackCooldown = 0;
+    this.penaltyTimer = 0;
+    this.radarCooldown = 0;
+    this.isPositionLocked = false;
+    this.togglePositionLock(false);
 
-  updateItemHUD() {
-    const btn = document.getElementById('btn-use-item');
-    const icon = document.getElementById('item-icon');
-    const label = document.getElementById('item-label');
-    const item = this.localRunner ? this.localRunner.item : null;
-
-    if (item) {
-      btn.classList.remove('disabled');
-      icon.textContent = item.icon;
-      label.textContent = item.name;
+    this.myAvatar.name = this.net.myName;
+    if (amIHunter) {
+      this.myAvatar.setRole('hunter');
+      this.myPos.set(0, 0, 28); // Inside Metro Exit 4 Holding Gate!
+      this.myRotY = Math.PI;
     } else {
-      btn.classList.add('disabled');
-      icon.textContent = '🏺';
-      label.textContent = '無寶壺道具';
+      this.myAvatar.setRole('chameleon');
+      this.myAvatar.resetToPureWhite(); // Starts 100% Pure White!
+      this.myPos.set((Math.random() - 0.5) * 8, 0, 6 + (Math.random() - 0.5) * 4);
+      this.myRotY = 0;
+    }
+
+    // Spawn Other Human Players & AI Bots
+    participants.forEach((p, idx) => {
+      if (p.id === this.net.myId) return;
+      const role = hunterSet.has(p.id) ? 'hunter' : 'chameleon';
+      const avatar = new ChameleonAvatar(p.name, role);
+      if (role === 'chameleon') {
+        avatar.resetToPureWhite();
+      }
+      this.scene.add(avatar.root);
+
+      const startX = role === 'hunter' ? (idx % 2 === 0 ? -1.5 : 1.5) : (idx - 2.5) * 2.5;
+      const startZ = role === 'hunter' ? 28 : 5;
+      avatar.root.position.set(startX, 0, startZ);
+
+      // Pick a hiding spot for AI Chameleon bots
+      const spot = this.world.hidingSpots[idx % Math.max(1, this.world.hidingSpots.length)];
+
+      this.otherPlayers.set(p.id, {
+        id: p.id,
+        name: p.name,
+        isBot: Boolean(p.isBot),
+        avatar,
+        x: startX,
+        y: 0,
+        z: startZ,
+        rotY: 0,
+        role,
+        score: 0,
+        botSpot: spot,
+        botBlended: false,
+        botWanderAngle: Math.random() * Math.PI * 2,
+        botStateTimer: 0
+      });
+    });
+
+    // Set Phase to 90s Hide Phase
+    this.phase = 'hide';
+    this.phaseTimer = HIDE_PHASE_SECONDS;
+    this.world.setHunterGateLocked(true);
+
+    this.switchScreen('hud');
+    this.updateRoleHUD();
+
+    const hunterNames = participants
+      .filter((p) => hunterSet.has(p.id))
+      .map((p) => p.name)
+      .join('、');
+
+    this.showCenterBanner(
+      amIHunter
+        ? `🩴 你被抽中當「鬼」！等待 90 秒後出動抓人！`
+        : `🦎 你是「純白變色龍」！鬼是【${hunterNames}】，快在 90 秒內換動作＋吸色偽裝！`,
+      4200
+    );
+  }
+
+  enterHuntPhase() {
+    if (this.phase === 'hunt') return;
+    this.phase = 'hunt';
+    this.phaseTimer = HUNT_PHASE_SECONDS; // 4m30s (270s)
+    this.world.setHunterGateLocked(false);
+    sfx.countdown(true);
+
+    document.getElementById('hunter-wait-panel')?.classList.add('hidden');
+    document.getElementById('btn-chameleon-skip-hide')?.classList.add('hidden');
+
+    this.showCenterBanner('🩴 90秒結束！藍白拖獵人正式出動！（追捕倒數 4分30秒）', 3800);
+    this.addEventFeed('🚨 捷運站出口開啟！鬼拿著藍白拖出動了！');
+  }
+
+  updateRoleHUD() {
+    const isHunter = this.myAvatar.role === 'hunter';
+    const badge = document.getElementById('hud-role-badge');
+    if (badge) {
+      badge.className = `role-badge ${isHunter ? 'hunter' : 'chameleon'}`;
+      badge.textContent = isHunter ? '🩴 抓人者：藍白拖鬼' : '🦎 躲藏者：純白變色龍';
+    }
+
+    document.getElementById('chameleon-actions')?.classList.toggle('hidden', isHunter);
+    document.getElementById('chameleon-pose-bar')?.classList.toggle('hidden', isHunter);
+    document.getElementById('btn-lock-pos')?.classList.toggle('hidden', isHunter);
+    document.getElementById('hunter-actions')?.classList.toggle('hidden', !isHunter);
+
+    const inHidePhase = this.phase === 'hide';
+    document.getElementById('hunter-wait-panel')?.classList.toggle('hidden', !(isHunter && inHidePhase));
+    document.getElementById('btn-skip-hide')?.classList.toggle('hidden', !this.net.isHost);
+    document.getElementById('btn-chameleon-skip-hide')?.classList.toggle('hidden', !(this.net.isHost && !isHunter && inHidePhase));
+
+    this.updateBodyColorDotsUI();
+  }
+
+  updateBodyColorDotsUI() {
+    const dots = document.querySelectorAll('#body-color-dots span');
+    dots.forEach((dot, idx) => {
+      dot.style.background = this.myAvatar.partColors[idx] || '#ffffff';
+    });
+  }
+
+  // ==================== CHAMELEON MECHANICS ====================
+  selectChameleonPose(poseId) {
+    if (this.myAvatar.role !== 'chameleon') return;
+    sfx.poseChange();
+    this.myAvatar.applyPose(poseId);
+    document.querySelectorAll('#pose-buttons-row .pose-pill-btn').forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.poseId === poseId);
+    });
+  }
+
+  togglePositionLock(locked) {
+    this.isPositionLocked = locked;
+    const btn = document.getElementById('btn-lock-pos');
+    if (btn) {
+      btn.classList.toggle('locked', locked);
+      btn.textContent = locked
+        ? '🔒 已鎖定位置（滑動螢幕可360°偷看鬼）'
+        : '🔓 自由移動中 (點此鎖定不動)';
     }
   }
 
-  applyKnockback(target, vuForce, vhForce, sourceName = '') {
-    target.vu = vuForce;
-    target.vh = vhForce;
-    target.isGrounded = false;
-    target.stunTimer = 0.65;
-    target.crouchTimer = 0;
-    target.char.squash = 0.55;
-    if (target.isLocal) {
-      sfx.bump();
-      this.shakeIntensity = 0.35;
-      if (sourceName) {
-        this.addFeedToast(`⚠️ 遭受到【${sourceName}】衝擊！`);
+  // 核心功能：一鍵快速塗上周邊相同顏色 (6 部位自動射線採樣)
+  triggerSurroundingsAutoCamo() {
+    if (this.myAvatar.role !== 'chameleon') return;
+    sfx.paintBlend();
+
+    const centers = this.myAvatar.getPartWorldCenters();
+    const sampledParts = this.world.sampleSurroundingColorsForParts(centers);
+    this.myAvatar.setAllParts(sampledParts);
+    this.updateBodyColorDotsUI();
+
+    // Spawn subtle sparkle ring
+    this.spawnColorBurstEffect(this.myPos.x, this.myPos.y + 0.8, this.myPos.z, sampledParts[1].color);
+    this.showToast('🎨 已自動吸取周邊環境顏色與質感！');
+  }
+
+  // 點擊 3D 畫面上的任何物件直接秒吸色
+  trySampleColorFromScreenTap(clientX, clientY) {
+    if (this.screenState !== 'playing' || this.myAvatar.role !== 'chameleon') return;
+
+    const rect = this.canvas.getBoundingClientRect();
+    const ndc = new THREE.Vector2(
+      ((clientX - rect.left) / rect.width) * 2 - 1,
+      -((clientY - rect.top) / rect.height) * 2 + 1
+    );
+
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera(ndc, this.camera);
+    const hits = raycaster.intersectObjects(this.world.paintableMeshes, false);
+
+    if (hits.length > 0 && hits[0].distance < 18) {
+      const obj = hits[0].object;
+      if (obj.userData && obj.userData.paintColor) {
+        sfx.colorPick();
+        this.myAvatar.setSingleColor(
+          obj.userData.paintColor,
+          obj.userData.roughness ?? 0.5,
+          obj.userData.metalness ?? 0.05
+        );
+        this.updateBodyColorDotsUI();
       }
     }
   }
 
-  addFeedToast(text) {
-    const feed = document.getElementById('event-feed');
-    const div = document.createElement('div');
-    div.className = 'feed-toast';
-    div.textContent = text;
-    feed.appendChild(div);
-    while (feed.children.length > 2) {
-      feed.removeChild(feed.firstChild);
+  triggerBobaSmoke() {
+    if (this.myAvatar.role !== 'chameleon' || this.bobaCharges <= 0) return;
+    this.bobaCharges--;
+    this.bobaSpeedTimer = 4.5;
+    this.togglePositionLock(false);
+    sfx.bobaSmoke();
+
+    const countEl = document.getElementById('boba-count');
+    if (countEl) countEl.textContent = `(${this.bobaCharges})`;
+
+    this.spawnBobaSmokeCloud(this.myPos.x, this.myPos.z);
+    this.net.sendAction('boba_smoke', { x: this.myPos.x, z: this.myPos.z });
+    this.showToast('🧋 施放黑糖珍奶煙霧彈！加速逃跑 4.5 秒！');
+  }
+
+  spawnBobaSmokeCloud(x, z) {
+    const group = new THREE.Group();
+    group.position.set(x, 0.2, z);
+
+    const smokeMat = new THREE.MeshStandardMaterial({
+      color: 0x451a03,
+      transparent: true,
+      opacity: 0.85,
+      roughness: 0.9
+    });
+
+    for (let i = 0; i < 14; i++) {
+      const r = 0.35 + Math.random() * 0.65;
+      const p = new THREE.Mesh(new THREE.SphereGeometry(r, 10, 10), smokeMat);
+      p.position.set((Math.random() - 0.5) * 3.2, Math.random() * 1.8, (Math.random() - 0.5) * 3.2);
+      group.add(p);
     }
-    setTimeout(() => {
-      if (div.parentNode === feed) feed.removeChild(div);
-    }, 2300);
+
+    this.scene.add(group);
+    this.smokeClouds.push({ mesh: group, timer: 4.5 });
   }
 
-  getEffectiveSteer() {
-    let kSteer = 0;
-    if (this.input.keys['KeyA'] || this.input.keys['ArrowLeft']) kSteer -= 1;
-    if (this.input.keys['KeyD'] || this.input.keys['ArrowRight']) kSteer += 1;
-    if (kSteer !== 0) return kSteer;
-    return this.input.steer;
+  spawnColorBurstEffect(x, y, z, hexColor) {
+    const mat = new THREE.MeshBasicMaterial({
+      color: new THREE.Color(hexColor),
+      wireframe: true,
+      transparent: true,
+      opacity: 0.85
+    });
+    const ring = new THREE.Mesh(new THREE.SphereGeometry(0.9, 12, 12), mat);
+    ring.position.set(x, y, z);
+    this.scene.add(ring);
+    this.smokeClouds.push({ mesh: ring, timer: 0.45, isBurst: true });
   }
 
-  // ================= PHYSICS, COLLISION JOSTLING & TRAPS =================
-  updateRunnerPhysics(r, dt, time) {
-    if (r.finished) {
-      r.char.animate(dt, time, { speed: 2, isGrounded: true });
+  triggerTaunt(manual = true) {
+    if (this.myAvatar.role !== 'chameleon') return;
+    if (manual && this.tauntCooldown > 0) return;
+
+    if (Math.random() < 0.5) {
+      sfx.tauntBabu();
+    } else {
+      sfx.tauntGarbageTruck();
+    }
+
+    if (manual) {
+      this.myScore += 30;
+      this.tauntCooldown = 10;
+      this.showToast('🔊 巴哺嘲諷成功！積分 +30！');
+    } else {
+      this.showToast('🔊 忍不住發出了台味嘲諷聲音！小心鬼聽聲辨位！');
+    }
+
+    this.spawnColorBurstEffect(this.myPos.x, this.myPos.y + 1.5, this.myPos.z, '#ec4899');
+    this.net.sendAction('taunt', { x: this.myPos.x, z: this.myPos.z, name: this.myAvatar.name });
+  }
+
+  // ==================== HUNTER MECHANICS (藍白拖敲打 & 4秒敲錯懲罰) ====================
+  triggerHunterSlipperAttack() {
+    if (this.myAvatar.role !== 'hunter') return;
+    if (this.phase === 'hide') {
+      this.showToast('🙈 目前是 90 秒躲藏期，倒數結束後才能出動敲人！');
+      return;
+    }
+    if (this.penaltyTimer > 0) {
+      this.showToast(`⚡ 手麻撿拖鞋硬直中！還要等 ${this.penaltyTimer.toFixed(1)} 秒！`, true);
+      return;
+    }
+    if (this.attackCooldown > 0) {
       return;
     }
 
-    if (r.stunTimer > 0) r.stunTimer = Math.max(0, r.stunTimer - dt);
-    if (r.mummyTimer > 0) r.mummyTimer = Math.max(0, r.mummyTimer - dt);
-    if (r.boostTimer > 0) r.boostTimer = Math.max(0, r.boostTimer - dt);
-    if (r.jostleCooldown > 0) r.jostleCooldown = Math.max(0, r.jostleCooldown - dt);
+    this.myAvatar.triggerSlipperSwing();
+    this.net.sendAction('slipper_swing', {});
 
-    if (r.isLocal && this.input.crouchHold) {
-      r.crouchTimer = Math.max(r.crouchTimer, 0.2);
-    } else if (r.crouchTimer > 0) {
-      r.crouchTimer = Math.max(0, r.crouchTimer - dt);
+    // 1. Check if we hit any Chameleon within 2.5m in front/around the Hunter
+    let hitTarget = null;
+    let bestDist = 2.55;
+
+    for (const [, p] of this.otherPlayers.entries()) {
+      if (p.role !== 'chameleon') continue;
+      const dx = p.x - this.myPos.x;
+      const dz = p.z - this.myPos.z;
+      const dist = Math.hypot(dx, dz);
+      if (dist < bestDist) {
+        bestDist = dist;
+        hitTarget = p;
+      }
     }
-    const isCrouching = r.crouchTimer > 0 && r.isGrounded;
 
-    // Check Slipstream (尾流跟風加速): running 1.5m to 11m behind any runner in a nearby lane
-    r.slipstream = false;
-    for (const other of this.getAllRunners()) {
-      if (other !== r && !other.finished) {
-        const ds = other.s - r.s;
-        if (ds > 1.5 && ds < 11.0 && Math.abs(other.u - r.u) < 2.2) {
-          r.slipstream = true;
+    if (hitTarget) {
+      // SUCCESS! Hit a hiding Chameleon -> Infect them into a Hunter!
+      sfx.slipperHitPlayer();
+      this.attackCooldown = 1.0;
+      this.myScore += 60;
+      this.infectPlayer(hitTarget.id, this.myAvatar.name);
+      this.net.sendAction('infect_player', {
+        targetId: hitTarget.id,
+        hunterName: this.myAvatar.name
+      });
+      return;
+    }
+
+    // 2. Didn't hit a Chameleon -> Check if we hit a REAL scene prop by mistake!
+    const forward = new THREE.Vector3(Math.sin(this.myRotY), 0, Math.cos(this.myRotY)).normalize();
+    const rayOrigin = new THREE.Vector3(this.myPos.x, this.myPos.y + 0.75, this.myPos.z);
+    const raycaster = new THREE.Raycaster(rayOrigin, forward, 0.1, 2.35);
+    const propHits = raycaster.intersectObjects(this.world.decoyPropMeshes, false);
+
+    // Also check proximity to any decoy prop bounding center
+    let hitRealProp = propHits.length > 0;
+    if (!hitRealProp) {
+      for (const mesh of this.world.decoyPropMeshes) {
+        const wp = new THREE.Vector3();
+        mesh.getWorldPosition(wp);
+        if (Math.hypot(wp.x - (this.myPos.x + forward.x * 1.1), wp.z - (this.myPos.z + forward.z * 1.1)) < 1.35) {
+          hitRealProp = true;
           break;
         }
       }
     }
 
-    const currentTile = this.world.getTileAt(r.u, r.s);
-    const tileType = currentTile ? currentTile.type : 'air';
-
-    // Target forward speed
-    let targetSpeed = 12.6;
-    if (r.boostTimer > 0) targetSpeed = 18.8;
-    else if (r.mummyTimer > 0) targetSpeed = 7.0;
-    else if (r.stunTimer > 0) targetSpeed = 4.8;
-    else if (tileType === 'quicksand' && r.isGrounded) targetSpeed = 7.2;
-    else if (tileType === 'gold_bridge') targetSpeed = 14.8;
-    else if (r.slipstream) targetSpeed = 14.6;
-
-    // Subtle rubber-banding for AI bots so the 8-player pack stays tightly competitive!
-    if (r.isAI && this.localRunner) {
-      const gap = this.localRunner.s - r.s;
-      if (gap > 16) targetSpeed += 2.8;
-      else if (gap < -18) targetSpeed -= 1.8;
-    }
-
-    r.vs += (targetSpeed - r.vs) * Math.min(1, dt * 6);
-
-    let steer = 0;
-    if (r.isLocal) {
-      steer = this.getEffectiveSteer();
-    } else if (r.isAI) {
-      steer = this.updateAIBrain(r, dt);
-    }
-
-    const desiredVu = steer * 9.6;
-    r.vu += (desiredVu - r.vu) * Math.min(1, dt * (r.stunTimer > 0 ? 2.0 : 8.5));
-
-    let nextU = r.u + r.vu * dt;
-    nextU = Math.max(-TRACK_HALF_WIDTH + 0.55, Math.min(TRACK_HALF_WIDTH - 0.55, nextU));
-
-    // Split Branch Center Divider Wall check
-    const nextTile = this.world.getTileAt(nextU, r.s + 0.6);
-    if (nextTile && nextTile.type === 'wall') {
-      const branchDir = r.u >= 0 ? 1 : -1;
-      nextU = branchDir * (LANE_WIDTH * 1.15);
-      r.vu = branchDir * 4.5;
-    }
-    r.u = nextU;
-    r.s += r.vs * dt;
-
-    // Gravity & Floor check
-    r.vh -= 34.0 * dt;
-    r.h += r.vh * dt;
-
-    const supportTile = this.world.getTileAt(r.u, r.s);
-    if (supportTile && supportTile.type !== 'wall' && r.h <= 0 && r.vh <= 0) {
-      r.h = 0;
-      r.vh = 0;
-      r.isGrounded = true;
-
-      if (supportTile.type === 'crumble') {
-        this.world.triggerCrumbleTile(supportTile.r, supportTile.lane);
-      } else if (supportTile.type === 'boost') {
-        r.boostTimer = Math.max(r.boostTimer, 1.35);
-        if (r.isLocal) sfx.boost();
-      }
+    if (hitRealProp) {
+      // ⚠️ WRONG HIT ON REAL PROP! Trigger 4.0-second Hand-Numbness & Dropped Slipper Penalty!
+      sfx.slipperPenalty();
+      this.penaltyTimer = 4.0;
+      this.attackCooldown = 4.0;
+      this.myAvatar.stunnedTimer = 4.0;
+      this.showToast('⚡ 敲到真物件了！手麻掉拖鞋罰站 4 秒！', true);
+      this.addEventFeed(`💥 ${this.myAvatar.name} 藍白拖敲錯真物件，手麻硬直 4 秒！`);
     } else {
-      r.isGrounded = false;
+      // Normal Miss in open air -> 1.8s recovery cooldown to prevent continuous spam
+      sfx.slipperSwing();
+      this.attackCooldown = 1.8;
     }
+  }
 
-    // Respawn if fallen into pit
-    if (r.h < -4.5) {
-      r.h = 2.5;
-      r.vh = 0;
-      r.u = r.u >= 0 ? LANE_WIDTH : -LANE_WIDTH;
-      r.stunTimer = 0.7;
-      if (r.isLocal) {
-        sfx.bump();
-        this.addFeedToast('🕳️ 掉入深坑！已爬回金字塔通道！');
+  infectPlayer(targetId, hunterName) {
+    if (targetId === this.net.myId) {
+      if (this.myAvatar.role === 'hunter') return;
+      sfx.slipperHitPlayer();
+      this.myAvatar.setRole('hunter');
+      this.isPositionLocked = false;
+      this.togglePositionLock(false);
+      this.updateRoleHUD();
+      this.showCenterBanner(`🩴 啪！你被【${hunterName}】的藍白拖抓到了！\n感染變成「鬼」，快一起抓剩下的變色龍！`, 4000);
+      this.addEventFeed(`🦠 ${this.myAvatar.name} 被 ${hunterName} 敲中，感染變成藍白拖鬼！`);
+    } else {
+      const p = this.otherPlayers.get(targetId);
+      if (p && p.role !== 'hunter') {
+        p.role = 'hunter';
+        p.avatar.setRole('hunter');
+        this.addEventFeed(`🦠 ${p.name} 被 ${hunterName} 的藍白拖抓獲，感染變成鬼！`);
       }
     }
 
-    // ================= NATURAL LEFT/RIGHT CONTACT JOSTLING & HEAD STOMP =================
-    for (const other of this.getAllRunners()) {
-      if (other === r || other.finished) continue;
-      const ds = Math.abs(other.s - r.s);
-      const du = other.u - r.u; // > 0 means 'other' is to the right of 'r'
-      const dh = r.h - other.h;
+    this.checkAllChameleonsCaught();
+  }
 
-      if (ds < 1.15 && Math.abs(du) < 1.08) {
-        // 1. Head Stomp: landing on top of another runner!
-        if (r.vh < -1.0 && dh > 0.52 && dh < 1.8) {
-          r.vh = 15.5;
-          r.knockouts++;
-          other.char.squash = 0.42;
-          other.stunTimer = 1.0;
-          other.vs *= 0.45;
-          if (r.isLocal) {
-            sfx.stomp();
-            this.addFeedToast(`👟 踩扁了 [${other.name}] 借力大跳！`);
-          } else if (other.isLocal) {
-            sfx.stomp();
-            this.addFeedToast(`😵 被 [${r.name}] 踩在頭上了！`);
-          }
-        } else if (Math.abs(dh) < 0.85) {
-          // 2. Left/Right Body Contact Physics: steering into someone transfers strong lateral push!
-          const pushDir = du >= 0 ? 1 : -1;
-          const myPushSpeed = r.vu * pushDir; // positive if 'r' is actively moving toward 'other'
+  triggerHunterRadar() {
+    if (this.myAvatar.role !== 'hunter' || this.radarCooldown > 0) return;
+    this.radarCooldown = 22;
+    sfx.readyBeep(true);
 
-          if (myPushSpeed > 1.2 && r.jostleCooldown <= 0) {
-            // Active lateral shoulder bump by moving left/right into rival!
-            const transfer = 9.5 + myPushSpeed * 0.85;
-            other.vu = pushDir * transfer;
-            other.char.squash = 0.75;
-            r.vu = -pushDir * 3.2; // Slight recoil
-            r.jostleCooldown = 0.35;
-            r.knockouts++;
+    let nearCount = 0;
+    for (const [, p] of this.otherPlayers.entries()) {
+      if (p.role === 'chameleon') {
+        const d = Math.hypot(p.x - this.myPos.x, p.z - this.myPos.z);
+        if (d <= 18) nearCount++;
+      }
+    }
 
-            if (r.isLocal || other.isLocal) {
-              sfx.bump();
-              this.world.spawnShockwave((r.u + other.u) / 2, r.h, r.s, '#ffd166');
-            }
-            if (r.isLocal) {
-              this.addFeedToast(`💥 左右卡位把 [${other.name}] 擠開了！`);
-            } else if (other.isLocal) {
-              this.addFeedToast(`⚠️ 被 [${r.name}] 從側面擠歪了！`);
-            }
+    if (nearCount > 0) {
+      this.showToast(`📡 逼逼雷達：半徑 18 公尺內有 ${nearCount} 隻偽裝變色龍！`);
+    } else {
+      this.showToast('📡 逼逼雷達：附近 18 公尺內沒有變色龍，換個區域找找！');
+    }
+  }
+
+  triggerJump() {
+    if (this.isPositionLocked || this.penaltyTimer > 0) return;
+    if (this.isGrounded) {
+      this.myVelY = 7.2;
+      this.isGrounded = false;
+      sfx.jump();
+    }
+  }
+
+  // ==================== NETWORK SYNC & AI BOTS ====================
+  applyRemotePlayerState(playerId, state) {
+    if (!state || playerId === this.net.myId) return;
+    let p = this.otherPlayers.get(playerId);
+    if (!p) {
+      const avatar = new ChameleonAvatar(state.name || '連線玩家', state.role || 'chameleon');
+      this.scene.add(avatar.root);
+      p = {
+        id: playerId,
+        name: state.name || '連線玩家',
+        isBot: false,
+        avatar,
+        x: state.x || 0,
+        y: state.y || 0,
+        z: state.z || 0,
+        rotY: state.rotY || 0,
+        role: state.role || 'chameleon',
+        score: state.score || 0
+      };
+      this.otherPlayers.set(playerId, p);
+    }
+
+    p.x = state.x ?? p.x;
+    p.y = state.y ?? p.y;
+    p.z = state.z ?? p.z;
+    p.rotY = state.rotY ?? p.rotY;
+    p.score = state.score ?? p.score;
+    p.role = state.role || p.role;
+
+    if (state.appearance) {
+      p.avatar.applyRemoteAppearance(state.appearance);
+    }
+  }
+
+  handleRemoteAction(playerId, action, payload) {
+    if (action === 'infect_player' && payload) {
+      this.infectPlayer(payload.targetId, payload.hunterName || '獵人');
+    } else if (action === 'skip_hide') {
+      this.enterHuntPhase();
+    } else if (action === 'boba_smoke' && payload) {
+      sfx.bobaSmoke();
+      this.spawnBobaSmokeCloud(payload.x, payload.z);
+    } else if (action === 'taunt' && payload) {
+      sfx.tauntBabu();
+      this.addEventFeed(`🔊 場上傳來【${payload.name}】的巴哺嘲諷聲！`);
+      this.spawnColorBurstEffect(payload.x, 1.4, payload.z, '#ec4899');
+    } else if (action === 'slipper_swing') {
+      const p = this.otherPlayers.get(playerId);
+      if (p) p.avatar.triggerSlipperSwing();
+    }
+  }
+
+  updateAIBots(dt) {
+    for (const [, bot] of this.otherPlayers.entries()) {
+      if (!bot.isBot) continue;
+
+      if (bot.role === 'chameleon') {
+        // During Hide Phase: run to assigned landmark hiding spot, strike pose & auto-blend!
+        if (bot.botSpot && !bot.botBlended) {
+          const dx = bot.botSpot.x - bot.x;
+          const dz = bot.botSpot.z - bot.z;
+          const dist = Math.hypot(dx, dz);
+          if (dist > 0.35) {
+            const step = Math.min(dist, 5.5 * dt);
+            bot.x += (dx / dist) * step;
+            bot.z += (dz / dist) * step;
+            bot.rotY = Math.atan2(dx, dz);
+            bot.avatar.update(dt, true);
           } else {
-            // Gentle separation so models don't overlap
-            r.vu -= pushDir * 10 * dt;
-            other.vu += pushDir * 10 * dt;
+            bot.x = bot.botSpot.x;
+            bot.z = bot.botSpot.z;
+            bot.rotY = bot.botSpot.rotY || 0;
+            bot.avatar.applyPose(bot.botSpot.poseId || 'cone');
+            const partData = (bot.botSpot.colors || []).map((c, idx) => ({
+              color: c,
+              roughness: bot.botSpot.roughness ? bot.botSpot.roughness[idx] : 0.45,
+              metalness: 0.05
+            }));
+            bot.avatar.setAllParts(partData);
+            bot.botBlended = true;
+            bot.avatar.update(dt, false);
+          }
+        } else {
+          // Stay frozen in camouflage pose!
+          if (this.phase === 'hunt') {
+            bot.score += dt;
+          }
+          bot.avatar.update(dt, false);
+        }
+      } else if (bot.role === 'hunter') {
+        // AI Hunter waits in holding gate during 90s Hide Phase, then patrols plaza!
+        if (this.phase === 'hide') {
+          bot.avatar.update(dt, false);
+          continue;
+        }
+
+        if (bot.avatar.stunnedTimer > 0) {
+          bot.avatar.update(dt, false);
+          continue;
+        }
+
+        bot.botStateTimer -= dt;
+        if (bot.botStateTimer <= 0) {
+          bot.botStateTimer = 2.0 + Math.random() * 2.5;
+          // Gently steer toward a random plaza point or nearby moving player
+          const targetX = (Math.random() - 0.5) * 30;
+          const targetZ = (Math.random() - 0.5) * 28;
+          bot.botWanderAngle = Math.atan2(targetX - bot.x, targetZ - bot.z);
+        }
+
+        bot.x += Math.sin(bot.botWanderAngle) * 5.2 * dt;
+        bot.z += Math.cos(bot.botWanderAngle) * 5.2 * dt;
+        bot.x = Math.max(-32, Math.min(32, bot.x));
+        bot.z = Math.max(-25, Math.min(25, bot.z));
+        bot.rotY = bot.botWanderAngle;
+        bot.avatar.update(dt, true);
+
+        // Check if AI Hunter catches a player who is moving or pure white nearby
+        if (this.myAvatar.role === 'chameleon') {
+          const dMe = Math.hypot(this.myPos.x - bot.x, this.myPos.z - bot.z);
+          const isMePureWhite = this.myAvatar.partColors[0] === '#ffffff' && this.myAvatar.poseId === 'stand';
+          const detectRadius = isMePureWhite || !this.isPositionLocked ? 2.1 : 0.85;
+          if (dMe < detectRadius) {
+            bot.avatar.triggerSlipperSwing();
+            this.infectPlayer(this.net.myId, bot.name);
           }
         }
       }
-    }
 
-    // ================= FLOOR TRAP SWITCHES (踩開關陷害後人) =================
-    for (const sw of this.world.trapSwitches) {
-      if (sw.triggered) continue;
-      if (Math.abs(sw.s - r.s) < 1.1 && Math.abs(sw.u - r.u) < 1.0 && r.h < 0.5) {
-        if (this.world.activateTrapSwitch(sw)) {
-          r.knockouts++;
-          const ambushS = Math.max(8, sw.s - 4.8);
-          if (r.isLocal) {
-            sfx.slam();
-            this.addFeedToast('😈 踩下【陷害開關】！後方降下火焰橫樑！');
-            this.network.sendAction('switch_trap', { ambushS, byName: r.name });
-          } else if (this.localRunner && this.localRunner.s < sw.s && sw.s - this.localRunner.s < 18) {
-            sfx.glassCrack();
-            this.addFeedToast(`⚠️ 前方 [${r.name}] 踩下陷害開關！小心火焰！`);
-          }
-        }
+      bot.avatar.root.position.set(bot.x, bot.y, bot.z);
+      bot.avatar.root.rotation.y = bot.rotY;
+      // Hide Chameleon nametags from Hunters so they have to spot them by sight!
+      if (bot.avatar.nameSprite) {
+        bot.avatar.nameSprite.visible = !(this.myAvatar.role === 'hunter' && bot.role === 'chameleon');
       }
     }
-
-    // ================= GOLDEN ITEM JARS PICKUP =================
-    for (const jar of this.world.itemJars) {
-      if (!jar.active) continue;
-      if (Math.abs(jar.s - r.s) < 1.25 && Math.abs(jar.u - r.u) < 1.2 && r.h < 1.6) {
-        jar.active = false;
-        jar.mesh.visible = false;
-        jar.respawnTimer = 4.5;
-        if (!r.item) {
-          r.item = ITEMS_CATALOG[Math.floor(Math.random() * ITEMS_CATALOG.length)];
-          if (r.isLocal) {
-            sfx.itemPickup();
-            this.updateItemHUD();
-            this.addFeedToast(`🏺 拾獲寶壺：【${r.item.icon} ${r.item.name}】`);
-          }
-        }
-      }
-    }
-
-    // ================= SLIPPERY OIL SLICKS =================
-    for (const oil of this.world.oilSlicks) {
-      if (!oil.active || oil.ownerId === r.id) continue;
-      if (Math.abs(oil.s - r.s) < 1.2 && Math.abs(oil.u - r.u) < 1.2 && r.h < 0.6) {
-        oil.active = false;
-        oil.mesh.visible = false;
-        const slideDir = Math.random() < 0.5 ? -1 : 1;
-        this.applyKnockback(r, slideDir * 15, 3.5, '滑溜神油');
-      }
-    }
-
-    // ================= PYRAMID TRAPS =================
-    for (const trap of this.world.traps) {
-      if (Math.abs(trap.s - r.s) > 0.95 || r.stunTimer > 0) continue;
-
-      if (trap.type === 'high_fire' || trap.type === 'high_gate') {
-        if (r.u >= trap.uMin && r.u <= trap.uMax) {
-          if (!isCrouching) {
-            r.s -= 1.8;
-            this.applyKnockback(r, (Math.random() - 0.5) * 6, 4.0, trap.name);
-          }
-        }
-      } else if (trap.type === 'low_spikes' || trap.type === 'low_log') {
-        if (r.u >= trap.uMin && r.u <= trap.uMax) {
-          if (r.h < 0.72) {
-            r.s -= 1.8;
-            this.applyKnockback(r, (Math.random() - 0.5) * 6, 6.0, trap.name);
-          }
-        }
-      } else if (trap.type === 'swing_axe') {
-        if (Math.abs(trap.u - r.u) < 1.3 && Math.abs(trap.h - r.h) < 1.5) {
-          const dir = r.u >= trap.u ? 1 : -1;
-          this.applyKnockback(r, dir * 14, 6.0, trap.name);
-        }
-      } else if (trap.type === 'boulder') {
-        if (Math.abs(trap.u - r.u) < 1.25 && r.h < 1.6) {
-          const dir = r.u >= trap.u ? 1 : -1;
-          this.applyKnockback(r, dir * 13, 5.5, trap.name);
-        }
-      }
-    }
-
-    // Check Finish Gate
-    if (r.s >= TRACK_LENGTH && !r.finished) {
-      r.finished = true;
-      r.finishTime = (performance.now() - this.raceStartClock) / 1000;
-      if (r.isLocal) {
-        sfx.win();
-        this.showResults();
-      }
-    }
-
-    this.syncRunnerMeshTransform(r, dt, time);
   }
 
-  syncRunnerMeshTransform(r, dt, time) {
-    const tf = this.world.getTrackTransform(r.u, r.h, r.s);
-    r.char.root.position.copy(tf.position);
-    r.char.root.rotation.set(0, Math.PI + tf.yaw - r.vu * 0.03, 0);
-    r.char.animate(dt, time, {
-      speed: r.vs,
-      isGrounded: r.isGrounded,
-      isStunned: r.stunTimer > 0,
-      isCrouching: r.crouchTimer > 0 && r.isGrounded,
-      isMummified: r.mummyTimer > 0
-    });
+  checkAllChameleonsCaught() {
+    if (this.screenState !== 'playing') return;
+    let chamCount = this.myAvatar.role === 'chameleon' ? 1 : 0;
+    for (const [, p] of this.otherPlayers.entries()) {
+      if (p.role === 'chameleon') chamCount++;
+    }
+    if (chamCount === 0) {
+      this.finishRound('hunters_win');
+    }
   }
 
-  updateAIBrain(bot, dt) {
-    bot.aiDecisionTimer -= dt;
-    if (bot.aiDecisionTimer <= 0) {
-      bot.aiDecisionTimer = 0.2 + Math.random() * 0.28;
+  finishRound(reason = 'time_up') {
+    if (this.screenState === 'result') return;
+    this.screenState = 'result';
+    sfx.win();
+    this.switchScreen('result');
 
-      const lookRow = Math.min(this.world.rows.length - 1, Math.round((bot.s + 6) / ROW_LEN));
-      const rowTiles = this.world.rows[lookRow] || [];
-      const validTiles = rowTiles.filter(
-        (t) => t && t.state !== 'broken' && t.type !== 'gap' && t.type !== 'wall'
-      );
-
-      if (validTiles.length > 0) {
-        // Sometimes AI actively steers toward a nearby player to jostle them!
-        let targetChosen = false;
-        if (this.localRunner && Math.abs(this.localRunner.s - bot.s) < 2.5 && Math.random() < 0.35) {
-          bot.aiTargetU = this.localRunner.u;
-          targetChosen = true;
-        }
-        if (!targetChosen) {
-          const sameSide = validTiles.filter((t) => (bot.u >= 0 ? t.u >= 0 : t.u <= 0));
-          const pool = sameSide.length > 0 ? sameSide : validTiles;
-          const bonus = pool.find((t) => t.type === 'gold_bridge' || t.type === 'boost');
-          const chosen = bonus || pool[Math.floor(Math.random() * pool.length)];
-          bot.aiTargetU = chosen.u;
-        }
-      }
-
-      // React to upcoming traps
-      for (const trap of this.world.traps) {
-        const dist = trap.s - bot.s;
-        if (dist > 0.5 && dist < 5.5) {
-          if (trap.type === 'high_fire' || trap.type === 'high_gate') {
-            if (Math.random() < 0.82) bot.crouchTimer = 0.9;
-          } else if (trap.type === 'low_spikes' || trap.type === 'low_log') {
-            if (bot.isGrounded && bot.mummyTimer <= 0 && Math.random() < 0.82) {
-              bot.vh = 13.8;
-              bot.isGrounded = false;
-            }
-          }
-        }
-      }
-
-      // Use item if holding one
-      if (bot.item && Math.random() < 0.45) {
-        this.activateRunnerItem(bot, bot.item);
-        bot.item = null;
-      }
+    let chamSurvivors = this.myAvatar.role === 'chameleon' ? 1 : 0;
+    let hunterCount = this.myAvatar.role === 'hunter' ? 1 : 0;
+    for (const [, p] of this.otherPlayers.entries()) {
+      if (p.role === 'chameleon') chamSurvivors++;
+      else hunterCount++;
     }
 
-    const diff = bot.aiTargetU - bot.u;
-    return Math.max(-1, Math.min(1, diff * 0.7));
-  }
+    const trophyEl = document.getElementById('result-trophy');
+    const titleEl = document.getElementById('result-title');
+    const subEl = document.getElementById('result-subtitle');
 
-  formatTime(sec) {
-    const m = Math.floor(sec / 60);
-    const s = Math.floor(sec % 60);
-    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-  }
-
-  updateCameraAndHUD(dt) {
-    const r = this.localRunner;
-    if (!r) return;
-
-    const all = this.getAllRunners().sort((a, b) => b.s - a.s);
-    const myRank = all.indexOf(r) + 1;
-    document.getElementById('hud-rank').innerHTML = `${myRank}<small>/${all.length}</small>`;
-
-    const pct = Math.min(100, Math.floor((r.s / TRACK_LENGTH) * 100));
-    const elapsed = this.state === 'racing' ? (performance.now() - this.raceStartClock) / 1000 : 0;
-    document.getElementById('hud-timer').textContent = `${this.formatTime(elapsed)} · ${pct}%`;
-    document.getElementById('hud-progress-fill').style.width = `${pct}%`;
-    document.getElementById('hud-zone-label').textContent = this.world.getZoneInfo(r.s).name;
-
-    // Status pill (Mummy wrapped vs Slipstream speed boost)
-    const statusPill = document.getElementById('hud-status-pill');
-    if (r.mummyTimer > 0) {
-      statusPill.textContent = '🤕 木乃伊纏身減速中！(連按跳躍掙脫)';
-      statusPill.classList.remove('hidden');
-    } else if (r.slipstream) {
-      statusPill.textContent = '💨 尾流跟風加速中！趁機左右超車擠人！';
-      statusPill.classList.remove('hidden');
+    if (chamSurvivors > 0) {
+      if (trophyEl) trophyEl.textContent = '🦎🏆';
+      if (titleEl) titleEl.textContent = '時間到！變色龍偽裝大獲全勝！';
+      if (this.myAvatar.role === 'chameleon') this.myScore += 120;
     } else {
-      statusPill.classList.add('hidden');
+      if (trophyEl) trophyEl.textContent = '🩴👑';
+      if (titleEl) titleEl.textContent = '全數抓獲！藍白拖獵人陣營全勝！';
     }
 
-    // Steady, clean camera follow
-    const camBackTf = this.world.getTrackTransform(r.u * 0.55, r.h * 0.35 + 4.2, r.s - 7.8);
-    const lookAheadTf = this.world.getTrackTransform(r.u * 0.4, 1.1, r.s + 10.0);
-
-    if (this.shakeIntensity > 0) {
-      this.shakeIntensity = Math.max(0, this.shakeIntensity - dt * 1.8);
-      camBackTf.position.x += (Math.random() - 0.5) * this.shakeIntensity;
-      camBackTf.position.y += (Math.random() - 0.5) * this.shakeIntensity;
+    if (subEl) {
+      subEl.textContent = `最終倖存變色龍: ${chamSurvivors} 人 ｜ 藍白拖獵人: ${hunterCount} 人`;
     }
 
-    this.camera.position.lerp(camBackTf.position, Math.min(1, dt * 10));
-    this.camera.lookAt(lookAheadTf.position);
-  }
-
-  showResults() {
-    this.state = 'result';
-    document.getElementById('hud-screen').classList.remove('active');
-    document.getElementById('result-screen').classList.add('active');
-
-    const all = this.getAllRunners().sort((a, b) => b.s - a.s);
-    const myRank = all.indexOf(this.localRunner) + 1;
-
-    const trophies = ['🏆', '🥈', '🥉'];
-    document.getElementById('result-trophy').textContent = trophies[myRank - 1] || '🏺';
-    document.getElementById('result-title').textContent =
-      myRank === 1 ? '第 1 名！奪得法老黃金寶藏！' : `第 ${myRank} 名！成功抵達寶庫！`;
-    document.getElementById('result-subtitle').textContent =
-      `通關時間: ${this.formatTime(this.localRunner.finishTime)} ｜ 陷害與擠人: ${this.localRunner.knockouts} 次`;
-
-    const lbList = document.getElementById('leaderboard-list');
-    lbList.innerHTML = '';
-    all.forEach((runner, idx) => {
-      const row = document.createElement('div');
-      row.className = 'lb-row' + (runner.isLocal ? ' me' : '');
-      const rankBadge = idx < 3 ? trophies[idx] : `#${idx + 1}`;
-      const progressText = runner.finished
-        ? this.formatTime(runner.finishTime)
-        : `${Math.floor((runner.s / TRACK_LENGTH) * 100)}%`;
-      row.innerHTML = `
-        <span><b>${rankBadge}</b> ${runner.name}</span>
-        <span>💥 ${runner.knockouts || 0} ｜ ⏱️ ${progressText}</span>
-      `;
-      lbList.appendChild(row);
-    });
-  }
-
-  loop(now) {
-    const dt = Math.min(0.05, (now - this.lastTime) / 1000);
-    this.lastTime = now;
-    const time = now / 1000;
-
-    if (this.state === 'lobby') {
-      // Smart Lobby Camera: keeps character in the UPPER half of the screen (100% above UI sheet!)
-      // LookAt y is lower than character center so character projects into the top half of viewport!
-      let targetCamPos = new THREE.Vector3(0, 2.35, 4.3);
-      let targetLookY = 1.95;
-
-      if (this.lobbyZoomMode === 'head') {
-        targetCamPos.set(0, 2.95, 2.65);
-        targetLookY = 2.62;
-      } else if (this.lobbyZoomMode === 'back') {
-        targetCamPos.set(0, 2.45, 3.85);
-        targetLookY = 2.05;
-      }
-
-      this.camera.position.lerp(targetCamPos, Math.min(1, dt * 8));
-      this.camera.lookAt(0, targetLookY, 0);
-
-      if (this.previewY > 0 || this.previewJumpVel !== 0) {
-        this.previewJumpVel -= 26 * dt;
-        this.previewY += this.previewJumpVel * dt;
-        if (this.previewY <= 0) {
-          this.previewY = 0;
-          this.previewJumpVel = 0;
-          this.previewChar.squash = 0.72;
-        }
-      }
-
-      this.previewRotationY += (this.previewTargetRotY - this.previewRotationY) * Math.min(1, dt * 8);
-      this.previewChar.root.position.y = this.previewY;
-      this.previewChar.root.rotation.y = this.previewRotationY;
-      this.lobbyRing.rotation.z = time * 1.2;
-
-      this.previewChar.animate(dt, time, {
-        speed: 5,
-        isGrounded: this.previewY <= 0.01
+    // Build Leaderboard
+    const allScores = [
+      { name: `${this.myAvatar.name} (你)`, role: this.myAvatar.role, score: Math.round(this.myScore) }
+    ];
+    for (const [, p] of this.otherPlayers.entries()) {
+      allScores.push({
+        name: p.name,
+        role: p.role,
+        score: Math.round(p.score + (p.role === 'chameleon' ? 100 : 45))
       });
-    } else {
-      this.world.update(dt, time);
+    }
+    allScores.sort((a, b) => b.score - a.score);
 
-      if (this.state === 'racing') {
-        this.updateRunnerPhysics(this.localRunner, dt, time);
-        this.aiRunners.forEach((bot) => this.updateRunnerPhysics(bot, dt, time));
-        this.remoteRunners.forEach((rem) => this.syncRunnerMeshTransform(rem, dt, time));
+    const lbEl = document.getElementById('leaderboard-list');
+    if (lbEl) {
+      lbEl.innerHTML = '';
+      allScores.forEach((item, idx) => {
+        const row = document.createElement('div');
+        row.className = 'lb-row';
+        const badge = item.role === 'hunter' ? '🩴 藍白拖鬼' : '🦎 倖存變色龍';
+        row.innerHTML = `
+          <span>#${idx + 1} ${item.name} <small>(${badge})</small></span>
+          <span>${item.score} 分</span>
+        `;
+        lbEl.appendChild(row);
+      });
+    }
+  }
 
-        if (Math.random() < 0.5) {
-          const r = this.localRunner;
-          this.network.sendState({
-            name: r.name,
-            appearance: this.myAppearance,
-            u: r.u,
-            h: r.h,
-            s: r.s,
-            isGrounded: r.isGrounded,
-            crouchTimer: r.crouchTimer,
-            stunTimer: r.stunTimer,
-            mummyTimer: r.mummyTimer,
-            finished: r.finished
-          });
-        }
-      } else if (this.state === 'countdown') {
-        this.syncRunnerMeshTransform(this.localRunner, dt, time);
-        this.aiRunners.forEach((bot) => this.syncRunnerMeshTransform(bot, dt, time));
+  returnToLobby() {
+    this.screenState = 'lobby';
+    this.otherPlayers.forEach((p) => this.scene.remove(p.avatar.root));
+    this.otherPlayers.clear();
+    this.myAvatar.setRole('chameleon');
+    this.myAvatar.resetToPureWhite();
+    this.positionAvatarForLobby();
+    this.switchScreen('lobby');
+  }
+
+  positionAvatarForLobby() {
+    this.myPos.set(0, 0, 12);
+    this.myRotY = 0;
+    this.myAvatar.root.position.copy(this.myPos);
+    this.myAvatar.root.rotation.y = 0;
+  }
+
+  // ==================== CONTROLS (JOYSTICK + CAMERA ORBIT + KEYBOARD) ====================
+  setupControls() {
+    // Virtual Joystick
+    const joyZone = document.getElementById('joystick-zone');
+    const joyKnob = document.getElementById('joystick-knob');
+    let joyPointerId = null;
+    let joyCenter = { x: 0, y: 0 };
+
+    joyZone?.addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+      joyPointerId = e.pointerId;
+      const rect = joyZone.getBoundingClientRect();
+      joyCenter = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+      joyZone.setPointerCapture(e.pointerId);
+    });
+
+    joyZone?.addEventListener('pointermove', (e) => {
+      if (e.pointerId !== joyPointerId) return;
+      const dx = e.clientX - joyCenter.x;
+      const dy = e.clientY - joyCenter.y;
+      const maxR = 42;
+      const dist = Math.min(maxR, Math.hypot(dx, dy));
+      const angle = Math.atan2(dy, dx);
+      const kx = Math.cos(angle) * dist;
+      const ky = Math.sin(angle) * dist;
+      if (joyKnob) {
+        joyKnob.style.transform = `translate(${kx}px, ${ky}px)`;
       }
+      this.joyVec.x = kx / maxR;
+      this.joyVec.y = ky / maxR;
+    });
 
-      this.updateCameraAndHUD(dt);
+    const resetJoy = (e) => {
+      if (e && e.pointerId !== joyPointerId) return;
+      joyPointerId = null;
+      if (joyKnob) joyKnob.style.transform = 'translate(0px, 0px)';
+      this.joyVec.x = 0;
+      this.joyVec.y = 0;
+    };
+    joyZone?.addEventListener('pointerup', resetJoy);
+    joyZone?.addEventListener('pointercancel', resetJoy);
+
+    // Camera Drag & Tap-to-Pick Color on Canvas
+    let camPointerId = null;
+    let downX = 0;
+    let downY = 0;
+    let lastX = 0;
+    let lastY = 0;
+    let movedDist = 0;
+
+    this.canvas.addEventListener('pointerdown', (e) => {
+      camPointerId = e.pointerId;
+      downX = lastX = e.clientX;
+      downY = lastY = e.clientY;
+      movedDist = 0;
+    });
+
+    window.addEventListener('pointermove', (e) => {
+      if (e.pointerId !== camPointerId) return;
+      const dx = e.clientX - lastX;
+      const dy = e.clientY - lastY;
+      movedDist += Math.hypot(dx, dy);
+      lastX = e.clientX;
+      lastY = e.clientY;
+
+      this.camYaw -= dx * 0.0075;
+      this.camPitch = Math.max(0.12, Math.min(1.25, this.camPitch + dy * 0.006));
+    });
+
+    window.addEventListener('pointerup', (e) => {
+      if (e.pointerId !== camPointerId) return;
+      camPointerId = null;
+      if (movedDist < 10) {
+        // Short tap on 3D canvas -> Sample color directly from tapped object!
+        this.trySampleColorFromScreenTap(downX, downY);
+      }
+    });
+
+    // Keyboard Support (WASD + Space + E + Q)
+    window.addEventListener('keydown', (e) => {
+      this.keys[e.code] = true;
+      if (this.screenState !== 'playing') return;
+      if (e.code === 'Space') this.triggerJump();
+      if (e.code === 'KeyE') {
+        if (this.myAvatar.role === 'hunter') this.triggerHunterSlipperAttack();
+        else this.triggerSurroundingsAutoCamo();
+      }
+      if (e.code === 'KeyF' && this.myAvatar.role === 'chameleon') {
+        this.togglePositionLock(!this.isPositionLocked);
+      }
+      if (e.code === 'KeyQ' && this.myAvatar.role === 'chameleon') {
+        this.triggerTaunt(true);
+      }
+    });
+
+    window.addEventListener('keyup', (e) => {
+      this.keys[e.code] = false;
+    });
+  }
+
+  // ==================== MAIN UPDATE LOOP ====================
+  animate(now) {
+    requestAnimationFrame((t) => this.animate(t));
+    const dt = Math.min(0.1, (now - this.lastTime) / 1000);
+    this.lastTime = now;
+
+    if (this.screenState === 'lobby') {
+      this.myAvatar.root.rotation.y += dt * 0.65;
+      this.camera.position.set(0, 3.2, 16.5);
+      this.camera.lookAt(0, 1.4, 8);
+      this.renderer.render(this.scene, this.camera);
+      return;
+    }
+
+    if (this.screenState === 'playing') {
+      this.updateMatchTimers(dt);
+      this.updateLocalPlayer(dt);
+      this.updateAIBots(dt);
+      this.updateRemotePlayers(dt);
+      this.updateSmokeEffects(dt);
+      this.world.update(dt, this.phase === 'hunt' && this.phaseTimer <= 90);
     }
 
     this.renderer.render(this.scene, this.camera);
-    requestAnimationFrame((t) => this.loop(t));
+  }
+
+  updateMatchTimers(dt) {
+    this.phaseTimer -= dt;
+    if (this.phase === 'hide' && this.phaseTimer <= 0) {
+      this.enterHuntPhase();
+    } else if (this.phase === 'hunt' && this.phaseTimer <= 0) {
+      this.finishRound('time_up');
+      return;
+    }
+
+    // Format MM:SS
+    const secLeft = Math.max(0, Math.ceil(this.phaseTimer));
+    const mm = String(Math.floor(secLeft / 60)).padStart(2, '0');
+    const ss = String(secLeft % 60).padStart(2, '0');
+
+    const phaseLabel = document.getElementById('hud-phase-label');
+    const timerDigits = document.getElementById('hud-timer');
+    if (phaseLabel) {
+      phaseLabel.textContent = this.phase === 'hide' ? '🙈 躲藏準備期' : '🩴 追捕倒數';
+    }
+    if (timerDigits) {
+      timerDigits.textContent = `${mm}:${ss}`;
+    }
+
+    // Update alive counts
+    let chamCount = this.myAvatar.role === 'chameleon' ? 1 : 0;
+    let huntCount = this.myAvatar.role === 'hunter' ? 1 : 0;
+    for (const [, p] of this.otherPlayers.entries()) {
+      if (p.role === 'chameleon') chamCount++;
+      else huntCount++;
+    }
+    const chamEl = document.getElementById('hud-cham-count');
+    const huntEl = document.getElementById('hud-hunt-count');
+    if (chamEl) chamEl.textContent = `🦎 剩餘: ${chamCount}`;
+    if (huntEl) huntEl.textContent = `🩴 鬼: ${huntCount}`;
+
+    // Cooldowns & Survival Points
+    if (this.myAvatar.role === 'chameleon' && this.phase === 'hunt') {
+      this.myScore += dt * 1.2;
+      this.autoTauntTimer -= dt;
+      if (this.autoTauntTimer <= 0) {
+        this.autoTauntTimer = 30;
+        this.triggerTaunt(false);
+      }
+    }
+
+    if (this.tauntCooldown > 0) {
+      this.tauntCooldown = Math.max(0, this.tauntCooldown - dt);
+      const tEl = document.getElementById('taunt-cd');
+      if (tEl) tEl.textContent = this.tauntCooldown > 0 ? `${Math.ceil(this.tauntCooldown)}s` : '+30分';
+    }
+
+    if (this.radarCooldown > 0) {
+      this.radarCooldown = Math.max(0, this.radarCooldown - dt);
+      const rEl = document.getElementById('radar-cd');
+      if (rEl) rEl.textContent = this.radarCooldown > 0 ? `${Math.ceil(this.radarCooldown)}s` : '就緒';
+    }
+
+    // Hunter Attack & 4s Wrong-Hit Penalty UI
+    if (this.attackCooldown > 0) {
+      this.attackCooldown = Math.max(0, this.attackCooldown - dt);
+    }
+    if (this.penaltyTimer > 0) {
+      this.penaltyTimer = Math.max(0, this.penaltyTimer - dt);
+    }
+
+    const penaltyWrap = document.getElementById('hud-penalty-bar-wrap');
+    const penaltyText = document.getElementById('hud-penalty-text');
+    const penaltyFill = document.getElementById('hud-penalty-fill');
+    const slipperBtn = document.getElementById('btn-slipper-attack');
+    const slipperTitle = document.getElementById('slipper-btn-title');
+    const slipperSub = document.getElementById('slipper-btn-sub');
+
+    if (this.penaltyTimer > 0) {
+      penaltyWrap?.classList.remove('hidden');
+      if (penaltyText) penaltyText.textContent = `⚡ 敲錯真物件！手麻撿拖鞋硬直中 (${this.penaltyTimer.toFixed(1)}s)`;
+      if (penaltyFill) penaltyFill.style.width = `${(this.penaltyTimer / 4.0) * 100}%`;
+      slipperBtn?.classList.add('cooldown');
+      if (slipperTitle) slipperTitle.textContent = `手麻硬直 ${this.penaltyTimer.toFixed(1)}s`;
+      if (slipperSub) slipperSub.textContent = '打到真物件罰站中...';
+    } else {
+      penaltyWrap?.classList.add('hidden');
+      if (this.attackCooldown > 0) {
+        slipperBtn?.classList.add('cooldown');
+        if (slipperTitle) slipperTitle.textContent = `收手冷卻 ${this.attackCooldown.toFixed(1)}s`;
+        if (slipperSub) slipperSub.textContent = '準備下一次揮擊';
+      } else {
+        slipperBtn?.classList.remove('cooldown');
+        if (slipperTitle) slipperTitle.textContent = '藍白拖敲打！';
+        if (slipperSub) slipperSub.textContent = '敲錯真物罰站 4 秒';
+      }
+    }
+  }
+
+  updateLocalPlayer(dt) {
+    // Combine Joystick + Keyboard input
+    let ix = this.joyVec.x;
+    let iy = this.joyVec.y;
+    if (this.keys['KeyA'] || this.keys['ArrowLeft']) ix -= 1;
+    if (this.keys['KeyD'] || this.keys['ArrowRight']) ix += 1;
+    if (this.keys['KeyW'] || this.keys['ArrowUp']) iy -= 1;
+    if (this.keys['KeyS'] || this.keys['ArrowDown']) iy += 1;
+
+    const mag = Math.hypot(ix, iy);
+    const hasMoveInput = mag > 0.08 && !this.isPositionLocked;
+
+    if (this.bobaSpeedTimer > 0) {
+      this.bobaSpeedTimer = Math.max(0, this.bobaSpeedTimer - dt);
+    }
+
+    let speed = this.myAvatar.role === 'hunter' ? 6.8 : 6.0;
+    if (this.bobaSpeedTimer > 0) speed *= 1.45;
+    if (this.penaltyTimer > 0) speed *= 0.42; // Slowed down when hand is numb from hitting wrong prop!
+
+    if (hasMoveInput) {
+      const moveAngle = Math.atan2(ix, iy) + this.camYaw;
+      const step = Math.min(1, mag) * speed * dt;
+      this.myPos.x += Math.sin(moveAngle) * step;
+      this.myPos.z += Math.cos(moveAngle) * step;
+      this.myRotY = moveAngle;
+    }
+
+    // Keep Hunter inside Metro Exit 4 Gate during 90s Hide Phase
+    if (this.myAvatar.role === 'hunter' && this.phase === 'hide') {
+      this.myPos.x = Math.max(-3.2, Math.min(3.2, this.myPos.x));
+      this.myPos.z = Math.max(25.8, Math.min(30.2, this.myPos.z));
+    } else {
+      this.myPos.x = Math.max(-35, Math.min(35, this.myPos.x));
+      this.myPos.z = Math.max(-27, Math.min(30, this.myPos.z));
+    }
+
+    // Vertical Gravity & Jump
+    if (!this.isGrounded) {
+      this.myPos.y += this.myVelY * dt;
+      this.myVelY -= 19.5 * dt;
+      if (this.myPos.y <= 0) {
+        this.myPos.y = 0;
+        this.myVelY = 0;
+        this.isGrounded = true;
+      }
+    }
+
+    this.myAvatar.root.position.copy(this.myPos);
+    this.myAvatar.root.rotation.y = this.myRotY;
+    this.myAvatar.update(dt, hasMoveInput);
+
+    // Update 3rd-Person Orbit Camera
+    const camX = this.myPos.x + Math.sin(this.camYaw) * Math.cos(this.camPitch) * this.camDist;
+    const camY = this.myPos.y + 1.4 + Math.sin(this.camPitch) * this.camDist;
+    const camZ = this.myPos.z + Math.cos(this.camYaw) * Math.cos(this.camPitch) * this.camDist;
+    this.camera.position.set(camX, Math.max(0.6, camY), camZ);
+    this.camera.lookAt(this.myPos.x, this.myPos.y + 1.15, this.myPos.z);
+
+    // Broadcast state at ~15Hz
+    this.netSyncAccum = (this.netSyncAccum || 0) + dt;
+    if (this.netSyncAccum >= 0.066) {
+      this.netSyncAccum = 0;
+      this.net.sendState({
+        name: this.myAvatar.name,
+        x: Number(this.myPos.x.toFixed(2)),
+        y: Number(this.myPos.y.toFixed(2)),
+        z: Number(this.myPos.z.toFixed(2)),
+        rotY: Number(this.myRotY.toFixed(2)),
+        role: this.myAvatar.role,
+        score: Math.round(this.myScore),
+        appearance: this.myAvatar.serializeAppearance()
+      });
+    }
+  }
+
+  updateRemotePlayers(dt) {
+    for (const [, p] of this.otherPlayers.entries()) {
+      if (p.isBot) continue;
+      p.avatar.root.position.lerp(new THREE.Vector3(p.x, p.y, p.z), Math.min(1, dt * 12));
+      p.avatar.root.rotation.y = p.rotY;
+      p.avatar.update(dt, false);
+      if (p.avatar.nameSprite) {
+        p.avatar.nameSprite.visible = !(this.myAvatar.role === 'hunter' && p.role === 'chameleon');
+      }
+    }
+  }
+
+  updateSmokeEffects(dt) {
+    for (let i = this.smokeClouds.length - 1; i >= 0; i--) {
+      const s = this.smokeClouds[i];
+      s.timer -= dt;
+      if (s.isBurst) {
+        s.mesh.scale.addScalar(dt * 3.5);
+      }
+      if (s.timer <= 0) {
+        this.scene.remove(s.mesh);
+        this.smokeClouds.splice(i, 1);
+      }
+    }
+  }
+
+  // ==================== UI HELPERS ====================
+  switchScreen(screenName) {
+    document.querySelectorAll('.screen').forEach((s) => s.classList.remove('active'));
+    document.getElementById(`${screenName}-screen`)?.classList.add('active');
+    this.screenState = screenName === 'hud' ? 'playing' : screenName;
+  }
+
+  showToast(text, isError = false) {
+    const el = document.getElementById('global-toast');
+    if (!el) return;
+    el.textContent = text;
+    el.style.background = isError
+      ? 'linear-gradient(135deg, #dc2626, #b91c1c)'
+      : 'linear-gradient(135deg, #059669, #10b981)';
+    el.classList.remove('hidden');
+    clearTimeout(this.toastTimeout);
+    this.toastTimeout = setTimeout(() => el.classList.add('hidden'), 3200);
+  }
+
+  showCenterBanner(text, duration = 3000) {
+    const el = document.getElementById('center-banner');
+    if (!el) return;
+    el.innerText = text;
+    el.classList.remove('hidden');
+    clearTimeout(this.bannerTimeout);
+    this.bannerTimeout = setTimeout(() => el.classList.add('hidden'), duration);
+  }
+
+  addEventFeed(text) {
+    const feed = document.getElementById('event-feed');
+    if (!feed) return;
+    const item = document.createElement('div');
+    item.className = 'feed-item';
+    item.textContent = text;
+    feed.appendChild(item);
+    setTimeout(() => {
+      item.remove();
+    }, 4500);
+  }
+
+  onResize() {
+    this.camera.aspect = window.innerWidth / window.innerHeight;
+    this.camera.updateProjectionMatrix();
+    this.renderer.setSize(window.innerWidth, window.innerHeight);
   }
 }
 
 window.addEventListener('DOMContentLoaded', () => {
-  new PyramidRushGame();
+  window.gameApp = new TaiwanChameleonGame();
 });

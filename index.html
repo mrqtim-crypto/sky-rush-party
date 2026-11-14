@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-  <title>法老金字塔大逃亡 3D - 多人Q萌跑酷派對</title>
+  <title>台灣變色龍：地標大躲貓貓 3D｜台北101・國父紀念館多人連線</title>
   <link rel="stylesheet" href="./styles.css" />
   <!-- PeerJS for Serverless WebRTC P2P Multiplayer on GitHub Pages -->
   <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
@@ -20,178 +20,249 @@
   <!-- 3D WebGL Canvas -->
   <canvas id="game-canvas"></canvas>
 
-  <!-- ================= LOBBY & CHARACTER CUSTOMIZER ================= -->
+  <!-- Toast Notification -->
+  <div id="global-toast" class="global-toast hidden">✅ 已複製專屬房間連結！傳給朋友點開即可直接進房！</div>
+
+  <!-- ================= LOBBY & ROOM WAITING SCREEN ================= -->
   <div id="lobby-screen" class="screen active">
     <header class="lobby-header">
       <div class="brand-badge">
-        <span class="brand-icon">🏺</span>
+        <span class="brand-icon">🦎</span>
         <div>
-          <h1>PYRAMID RUSH <span class="accent">3D</span></h1>
-          <p class="subtitle">埃及金字塔・多人Q萌心機跑酷</p>
+          <h1>台灣變色龍 <span class="accent">地標大躲貓貓</span></h1>
+          <p class="subtitle">台北101・國父紀念館｜吸色同化 × 奇葩動作 × 藍白拖抓鬼</p>
         </div>
       </div>
-
-      <div class="room-bar">
-        <div class="room-pill">
-          <span class="dot online"></span>
-          <span>房號:</span>
-          <input id="room-input" type="text" value="PARTY1" maxlength="6" />
-          <button id="btn-join-room" class="mini-btn">進房</button>
-          <button id="btn-copy-invite" class="mini-btn invite-btn">🔗 邀請</button>
-        </div>
-        <div id="online-status" class="online-tag">連線中...</div>
-      </div>
+      <div id="online-status" class="online-tag">🔄 準備連線中...</div>
     </header>
 
-    <!-- 3D Character Preview Touch Area (Upper Half of Screen) -->
-    <div id="preview-touch-zone" class="preview-stage-hint">
-      <div id="invite-copied-toast" class="invite-toast hidden">✅ 已複製房間連結！傳給朋友點開即可同場闖關！</div>
-      <div class="stage-bottom-bar">
-        <span class="rotate-hint">👆 左右拖曳旋轉角色</span>
-        <button id="btn-random-look" class="glass-pill-btn">🎲 隨機造型</button>
-        <button id="btn-pose-jump" class="glass-pill-btn">✨ 跳躍動作</button>
+    <!-- 3D Character & Landmark Preview Area -->
+    <div id="preview-touch-zone" class="preview-stage">
+      <div class="preview-floating-tips">
+        <span class="tip-chip">🎨 一鍵塗上周邊相同顏色</span>
+        <span class="tip-chip">🧘 9種奇葩動作消除人形</span>
+        <span class="tip-chip">🩴 藍白拖敲錯罰站4秒</span>
+        <span class="tip-chip">🦠 感染模式・鬼隨機抽選</span>
+      </div>
+      <div class="preview-pose-demo">
+        <span>預覽動作：</span>
+        <button class="mini-pose-btn" data-preview-pose="stand">🧍 全白人形</button>
+        <button class="mini-pose-btn" data-preview-pose="cone">⚠️ 尖塔三角錐</button>
+        <button class="mini-pose-btn" data-preview-pose="ball">⚽ 縮頭球體</button>
+        <button class="mini-pose-btn" data-preview-pose="box">📦 方塊蹲</button>
+        <button class="mini-pose-btn" data-preview-pose="guard">💂 衛兵敬禮</button>
       </div>
     </div>
 
-    <!-- Bottom Customization Panel -->
-    <section class="customizer-sheet">
-      <div class="player-meta-row">
-        <div class="input-group">
-          <label>探險家暱稱</label>
-          <input id="player-name" type="text" value="小法老" maxlength="10" />
-        </div>
-        <div class="rule-tip-pill">
-          ◀▶ 左右碰撞擠人 ｜ ⬆️ 跳過地刺踩頭 ｜ ⬇️ 蹲過火樑 ｜ 🔴 踩開關陷害後人
-        </div>
-      </div>
-
-      <!-- Category Tabs -->
-      <div class="custom-tabs" id="custom-tabs">
-        <button class="tab-btn active" data-tab="gender">🚻 性別/膚色</button>
-        <button class="tab-btn" data-tab="hair">💇 髮型</button>
-        <button class="tab-btn" data-tab="eyes">👀 眼睛</button>
-        <button class="tab-btn" data-tab="outfit">👕 服裝</button>
-        <button class="tab-btn" data-tab="extra">🎒 背飾/星砂</button>
-      </div>
-
-      <div class="tab-content-wrap">
-        <div class="tab-pane active" id="pane-gender">
-          <div class="option-row" id="gender-options"></div>
-          <div class="color-row-label">膚色選擇</div>
-          <div class="color-swatches" id="skin-colors"></div>
+    <!-- Bottom Lobby Card -->
+    <section class="lobby-sheet">
+      <!-- Row 1: Player Name + Room ID + Password + Connect + One-Click Share -->
+      <div class="room-setup-grid">
+        <div class="field-box">
+          <label>👤 你的暱稱</label>
+          <input id="player-name" type="text" value="百變小龍" maxlength="10" placeholder="輸入暱稱" />
         </div>
 
-        <div class="tab-pane" id="pane-hair">
-          <div class="option-grid" id="hair-options"></div>
-          <div class="color-row-label">髮色</div>
-          <div class="color-swatches" id="hair-colors"></div>
+        <div class="field-box">
+          <label>🏠 房號代碼</label>
+          <input id="room-input" type="text" value="TW101" maxlength="8" placeholder="例如 TW101" />
         </div>
 
-        <div class="tab-pane" id="pane-eyes">
-          <div class="option-grid" id="eye-options"></div>
-          <div class="color-row-label">瞳色</div>
-          <div class="color-swatches" id="eye-colors"></div>
+        <div class="field-box">
+          <label>🔒 房間密碼 <small>(選填)</small></label>
+          <input id="room-pwd-input" type="text" value="" maxlength="8" placeholder="可設密碼鎖房" />
         </div>
 
-        <div class="tab-pane" id="pane-outfit">
-          <div class="option-grid" id="outfit-options"></div>
-          <div class="color-row-label">服裝主色</div>
-          <div class="color-swatches" id="outfit-colors"></div>
-        </div>
-
-        <div class="tab-pane" id="pane-extra">
-          <div class="option-grid" id="back-options"></div>
-          <div class="color-row-label">腳步特效</div>
-          <div class="option-row" id="trail-options"></div>
+        <div class="room-btn-group">
+          <button id="btn-join-room" class="action-pill-btn join-btn">🔑 建立/進房</button>
+          <button id="btn-share-link" class="action-pill-btn share-btn">🔗 一鍵分享連結</button>
         </div>
       </div>
 
-      <div class="start-cta-row">
-        <button id="btn-start-game" class="start-game-btn">
-          🏺 進入金字塔探險！(多人同場)
+      <!-- Row 2: Map Selection & Room Roster -->
+      <div class="lobby-middle-split">
+        <!-- Map & Rules Box -->
+        <div class="map-selector-box">
+          <div class="section-title">🗺️ 選擇台灣地標場景 <span id="host-only-hint" class="small-badge">房主設定</span></div>
+          <div class="map-cards">
+            <button class="map-card active" data-map="taipei101">
+              <span class="map-emoji">🏙️</span>
+              <div class="map-info">
+                <strong>台北 101 跨年信義廣場</strong>
+                <small>LOVE雕塑・YouBike站・阻尼器金球・三角錐陣</small>
+              </div>
+            </button>
+            <button class="map-card" data-map="sys_hall">
+              <span class="map-emoji">🏛️</span>
+              <div class="map-info">
+                <strong>國父紀念館與翠湖迴廊</strong>
+                <small>琉璃瓦大廳・禮兵交接台・迴廊練舞鏡・翠湖錦鯉</small>
+              </div>
+            </button>
+          </div>
+
+          <label class="bot-toggle-row">
+            <input type="checkbox" id="chk-fill-bots" checked />
+            <span>🤖 人數不足時自動補滿 AI 變色龍陪玩（滿 6 人熱鬧開局）</span>
+          </label>
+        </div>
+
+        <!-- Waiting Room Player Roster -->
+        <div class="roster-box">
+          <div class="section-title">
+            <span>👥 房間等待名單</span>
+            <span id="ready-counter" class="ready-count-badge">準備 1/1</span>
+          </div>
+          <div id="roster-list" class="roster-list"></div>
+        </div>
+      </div>
+
+      <!-- Row 3: Ready / Host Start CTA -->
+      <div class="lobby-cta-row">
+        <button id="btn-guest-ready" class="start-game-btn ready-toggle-btn hidden">
+          ✅ 點擊準備完成（等待房主開始）
+        </button>
+        <button id="btn-host-start" class="start-game-btn">
+          🚀 房主開始遊戲！（隨機抽鬼・90秒躲藏＋4分半追捕）
         </button>
       </div>
     </section>
   </div>
 
-  <!-- ================= CLEAN IN-GAME HUD ================= -->
+  <!-- ================= IN-GAME HUD SCREEN ================= -->
   <div id="hud-screen" class="screen">
+    <!-- Top Status Bar -->
     <div class="hud-top">
-      <div class="hud-stat-row">
-        <div class="rank-card">
-          <span class="rank-label">名次</span>
-          <span id="hud-rank" class="rank-num">1<small>/8</small></span>
+      <div class="hud-top-row">
+        <div id="hud-role-badge" class="role-badge chameleon">
+          🦎 躲藏者：純白變色龍
         </div>
 
-        <div class="progress-container">
-          <div class="progress-header">
-            <span id="hud-zone-label" class="zone-badge">🏜️ 第一章：獅身人面像沙道</span>
-            <span id="hud-timer" class="timer-badge">00:00 · 0%</span>
-          </div>
-          <div class="progress-bar-bg">
-            <div id="hud-progress-fill" class="progress-bar-fill"></div>
-            <div class="goal-flag">🏺</div>
-          </div>
+        <div class="phase-timer-box">
+          <span id="hud-phase-label" class="phase-label">🙈 躲藏準備期</span>
+          <span id="hud-timer" class="timer-digits">01:30</span>
+        </div>
+
+        <div class="alive-counts">
+          <span class="count-pill cham" id="hud-cham-count">🦎 剩餘: 5</span>
+          <span class="count-pill hunt" id="hud-hunt-count">🩴 鬼: 1</span>
         </div>
       </div>
 
-      <!-- Status Pill (Slipstream / Mummy Wrapped) -->
-      <div id="hud-status-pill" class="status-pill hidden">💨 尾流跟風加速中！</div>
+      <!-- Taunt / Penalty Progress Bar -->
+      <div id="hud-penalty-bar-wrap" class="penalty-bar-wrap hidden">
+        <div class="penalty-bar-text" id="hud-penalty-text">⚡ 敲錯真物件！手麻撿拖鞋硬直中 (4.0s)</div>
+        <div class="penalty-bar-bg">
+          <div id="hud-penalty-fill" class="penalty-bar-fill"></div>
+        </div>
+      </div>
 
       <!-- Event Feed -->
       <div id="event-feed" class="event-feed"></div>
     </div>
 
-    <div id="center-banner" class="center-banner hidden">3</div>
+    <!-- Center Announcement Banner -->
+    <div id="center-banner" class="center-banner hidden"></div>
 
-    <!-- Bottom Touch Controls: Left/Right + Item + Crouch + Jump -->
-    <div class="hud-controls">
-      <!-- Left: Steering Pad (Physical body jostling on contact!) -->
-      <div id="joystick-zone" class="joystick-zone">
-        <div id="joystick-base" class="joystick-base">
-          <div class="joy-arrows"><span>◀ 左擠</span><span>右擠 ▶</span></div>
-          <div id="joystick-knob" class="joystick-knob"></div>
-        </div>
-      </div>
-
-      <!-- Right: Item (🏺), Crouch (⬇️), Jump (⬆️) -->
-      <div class="action-buttons">
-        <button id="btn-use-item" class="act-btn item-btn disabled">
-          <span id="item-icon" class="act-icon">🏺</span>
-          <span id="item-label" class="act-text">無寶壺道具</span>
-        </button>
-
-        <div class="lower-action-row">
-          <button id="btn-crouch" class="act-btn crouch-btn">
-            <span class="act-icon">⬇️</span>
-            <span class="act-text">蹲下閃避</span>
-          </button>
-
-          <button id="btn-jump" class="act-btn jump-btn">
-            <span class="act-icon">⬆️</span>
-            <span class="act-text">跳躍/踩頭</span>
-          </button>
-        </div>
+    <!-- Hunter Holding Overlay during first 90s Hide Phase -->
+    <div id="hunter-wait-panel" class="hunter-wait-panel hidden">
+      <div class="wait-card">
+        <h3>🩴 你被隨機抽中當「鬼（藍白拖獵人）」！</h3>
+        <p>目前是 <strong>90 秒躲藏準備期</strong>，變色龍們正在場上換動作與吸取周邊顏色。</p>
+        <p class="wait-tip">💡 提示：出動後請仔細觀察顏色接縫與奇怪形狀，<strong>敲錯真物件會手麻罰站 4 秒</strong>喔！</p>
+        <button id="btn-skip-hide" class="skip-hide-btn hidden">⏩ 全員已躲好？房主提前出動！</button>
       </div>
     </div>
 
-    <div class="kb-hint">
-      💻 鍵盤：<kbd>A</kbd><kbd>D</kbd> 或 <kbd>◀</kbd><kbd>▶</kbd> 左右移動與貼身擠人 ｜ <kbd>W</kbd>/<kbd>Space</kbd>/<kbd>▲</kbd> 跳躍 ｜ <kbd>S</kbd>/<kbd>▼</kbd> 蹲下 ｜ <kbd>E</kbd> 使用寶壺道具
+    <!-- Host Quick Skip Hide Phase Button for Chameleons too -->
+    <button id="btn-chameleon-skip-hide" class="floating-skip-btn hidden">⏩ 躲好了！提前開始追捕</button>
+
+    <!-- ================= CHAMELEON POSE & TILT BAR ================= -->
+    <div id="chameleon-pose-bar" class="pose-bar-container">
+      <div class="pose-scroll" id="pose-buttons-row"></div>
+      <div class="tilt-row">
+        <span>📐 身體傾斜/貼牆角:</span>
+        <input id="tilt-slider" type="range" min="-90" max="90" value="0" step="5" />
+        <button id="btn-reset-tilt" class="mini-reset-btn">歸零</button>
+        <span class="tap-scene-hint">💡 直接點畫面物件也能秒吸色！</span>
+      </div>
+    </div>
+
+    <!-- ================= BOTTOM TOUCH CONTROLS ================= -->
+    <div class="hud-controls">
+      <!-- Left: 360 Virtual Joystick + Lock Position Toggle -->
+      <div class="left-control-col">
+        <button id="btn-lock-pos" class="lock-pos-btn">🔓 自由移動中 (點此鎖定不動)</button>
+        <div id="joystick-zone" class="joystick-zone">
+          <div id="joystick-base" class="joystick-base">
+            <div class="joy-cross"></div>
+            <div id="joystick-knob" class="joystick-knob"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: Role-Specific Action Buttons -->
+      <div class="right-control-col">
+        <!-- CHAMELEON ACTIONS -->
+        <div id="chameleon-actions" class="role-actions">
+          <button id="btn-auto-camo" class="big-camo-btn">
+            <span class="camo-icon">🎨</span>
+            <div class="camo-txt">
+              <strong>一鍵周邊快速同化</strong>
+              <small>自動吸取身邊6部位顏色</small>
+            </div>
+            <div id="body-color-dots" class="body-color-dots">
+              <span></span><span></span><span></span><span></span><span></span><span></span>
+            </div>
+          </button>
+
+          <div class="sub-action-row">
+            <button id="btn-boba-smoke" class="sub-act-btn boba-btn">
+              <span>🧋 珍奶煙霧彈 <b id="boba-count">(2)</b></span>
+            </button>
+            <button id="btn-taunt" class="sub-act-btn taunt-btn">
+              <span>🔊 巴哺嘲諷 <b id="taunt-cd">+30分</b></span>
+            </button>
+            <button id="btn-jump-cham" class="sub-act-btn jump-btn">
+              <span>⬆️ 跳躍</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- HUNTER ACTIONS -->
+        <div id="hunter-actions" class="role-actions hidden">
+          <button id="btn-slipper-attack" class="big-slipper-btn">
+            <span class="slipper-icon">🩴</span>
+            <div class="slipper-txt">
+              <strong id="slipper-btn-title">藍白拖敲打！</strong>
+              <small id="slipper-btn-sub">敲錯真物罰站 4 秒</small>
+            </div>
+          </button>
+
+          <div class="sub-action-row">
+            <button id="btn-radar-scan" class="sub-act-btn radar-btn">
+              <span>📡 逼逼雷達 <b id="radar-cd">就緒</b></span>
+            </button>
+            <button id="btn-jump-hunt" class="sub-act-btn jump-btn">
+              <span>⬆️ 跳躍追擊</span>
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
-  <!-- ================= FINISH SCREEN ================= -->
+  <!-- ================= RESULT SCREEN ================= -->
   <div id="result-screen" class="screen">
     <div class="result-card">
       <div class="result-badge" id="result-trophy">🏆</div>
-      <h2 id="result-title">成功抵達法老黃金寶庫！</h2>
-      <p id="result-subtitle" class="result-stats-line">通關時間: 03:20 ｜ 陷害與擠飛對手: 5 次</p>
+      <h2 id="result-title">回合結束！變色龍偽裝大成功！</h2>
+      <p id="result-subtitle" class="result-stats-line">存活變色龍: 2 人 ｜ 藍白拖抓獲: 4 人</p>
 
       <div class="leaderboard-list" id="leaderboard-list"></div>
 
       <div class="result-actions">
-        <button id="btn-rematch" class="start-game-btn">🔄 再次挑戰金字塔</button>
-        <button id="btn-back-lobby" class="secondary-btn">👕 返回更衣室換裝</button>
+        <button id="btn-back-lobby" class="start-game-btn">🔄 返回房間準備下一局（重新隨機抽鬼）</button>
       </div>
     </div>
   </div>
