@@ -7,61 +7,45 @@ import {
   TRACK_LENGTH,
   ROW_LEN,
   LANE_WIDTH,
-  TRACK_HALF_WIDTH,
-  UPPER_DECK_HEIGHT
+  TRACK_HALF_WIDTH
 } from './world.js';
 
-const ITEMS_CATALOG = [
-  { id: 'turbo', name: '渦輪衝刺', icon: '⚡' },
-  { id: 'shockwave', name: '震波手榴彈', icon: '💥' },
-  { id: 'shield', name: '能量護盾', icon: '🛡️' },
-  { id: 'magnet', name: '磁力吸盤', icon: '🧲' },
-  { id: 'slime_trap', name: '黏液陷阱', icon: '🧪' }
-];
-
 const AI_NAMES = [
-  '閃電阿凱', '草莓泡芙', '暴風小傑', '霓虹米亞',
-  '恐龍豆豆', '星光露露', '渦輪雷恩'
+  '法老阿凱', '奈菲爾ティ', '沙漠泡芙', '荷魯斯小傑',
+  '貓神米亞', '聖甲蟲豆豆', '金字塔露露'
 ];
 
-class SkyRushGame {
+class PyramidRushGame {
   constructor() {
     this.canvas = document.getElementById('game-canvas');
     this.state = 'lobby'; // 'lobby' | 'countdown' | 'racing' | 'result'
-    this.trackMode = 'spiral';
     this.roomSeed = 202611;
 
-    // Load saved player appearance
-    const savedApp = localStorage.getItem('skyrush_appearance');
+    const savedApp = localStorage.getItem('pyramid_appearance');
     this.myAppearance = savedApp ? JSON.parse(savedApp) : {
       gender: 'girl',
-      skinColor: '#ffe0c8',
-      hairStyle: 'twintails',
-      hairColor: '#ff4785',
+      skinColor: '#ffe4d0',
+      hairStyle: 'bob',
+      hairColor: '#3b2820',
       eyeStyle: 'starry',
-      eyeColor: '#00b4d8',
-      outfit: 'hoodie',
-      outfitColor: '#00d2ff',
-      backItem: 'wings',
-      trail: 'rainbow'
+      eyeColor: '#2b2d42',
+      outfit: 'explorer',
+      outfitColor: '#f4a261',
+      backItem: 'backpack',
+      trail: 'gold'
     };
-    this.myName = localStorage.getItem('skyrush_name') || '派對之星';
+    this.myName = localStorage.getItem('pyramid_name') || '小法老';
 
-    // Controls state
     this.input = {
-      steer: 0, // -1 (left) to +1 (right)
+      steer: 0,
+      crouchHold: false,
       keys: {}
     };
 
-    // Camera shake
     this.shakeIntensity = 0;
-
-    // Runners list: local player + remote P2P players + AI bots
     this.localRunner = null;
     this.aiRunners = [];
-    this.remoteRunners = new Map(); // id -> runner
-
-    // Trail particles
+    this.remoteRunners = new Map();
     this.particles = [];
 
     this.initThree();
@@ -85,45 +69,28 @@ class SkyRushGame {
     this.renderer.shadowMap.enabled = true;
 
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color('#101632');
-    this.scene.fog = new THREE.FogExp2('#101632', 0.0085);
+    // Warm, clean Egyptian desert sunset sky
+    this.scene.background = new THREE.Color('#e8b878');
+    this.scene.fog = new THREE.FogExp2('#e8b878', 0.009);
 
     this.camera = new THREE.PerspectiveCamera(
-      62,
+      58,
       window.innerWidth / window.innerHeight,
       0.1,
-      260
+      240
     );
 
-    // Lights
-    const hemiLight = new THREE.HemisphereLight('#ffffff', '#3a2b6e', 1.15);
+    const hemiLight = new THREE.HemisphereLight('#fff8eb', '#8c5828', 1.25);
     this.scene.add(hemiLight);
 
-    this.dirLight = new THREE.DirectionalLight('#fff6e5', 1.35);
-    this.dirLight.position.set(18, 36, 24);
+    this.dirLight = new THREE.DirectionalLight('#fff2d6', 1.35);
+    this.dirLight.position.set(22, 42, 26);
     this.dirLight.castShadow = true;
     this.scene.add(this.dirLight);
 
-    // Starfield particles in sky
-    const starGeo = new THREE.BufferGeometry();
-    const starVerts = [];
-    for (let i = 0; i < 600; i++) {
-      starVerts.push(
-        (Math.random() - 0.5) * 220,
-        (Math.random() - 0.5) * 180,
-        -Math.random() * 620
-      );
-    }
-    starGeo.setAttribute('position', new THREE.Float32BufferAttribute(starVerts, 3));
-    const starMat = new THREE.PointsMaterial({ color: '#a8e6ff', size: 0.7 });
-    this.starField = new THREE.Points(starGeo, starMat);
-    this.scene.add(this.starField);
-
-    // World & Track
     this.world = new TrackWorld(this.scene);
-    this.world.buildTrack(this.roomSeed, this.trackMode);
+    this.world.buildTrack(this.roomSeed);
 
-    // Particle Group
     this.particleGroup = new THREE.Group();
     this.scene.add(this.particleGroup);
 
@@ -138,20 +105,19 @@ class SkyRushGame {
     this.lobbyGroup = new THREE.Group();
     this.scene.add(this.lobbyGroup);
 
-    const pedGeo = new THREE.CylinderGeometry(1.35, 1.55, 0.32, 32);
+    const pedGeo = new THREE.CylinderGeometry(1.35, 1.55, 0.34, 24);
     const pedMat = new THREE.MeshStandardMaterial({
-      color: '#253166',
-      roughness: 0.25,
-      metalness: 0.3
+      color: '#c99352',
+      roughness: 0.6
     });
     const ped = new THREE.Mesh(pedGeo, pedMat);
-    ped.position.set(0, -0.16, 0);
+    ped.position.set(0, -0.17, 0);
 
-    const ringGeo = new THREE.TorusGeometry(1.42, 0.06, 12, 36);
+    const ringGeo = new THREE.TorusGeometry(1.42, 0.06, 10, 32);
     const ringMat = new THREE.MeshStandardMaterial({
-      color: '#00f0ff',
-      emissive: '#00f0ff',
-      emissiveIntensity: 0.85
+      color: '#ffd166',
+      metalness: 0.6,
+      roughness: 0.25
     });
     const ring = new THREE.Mesh(ringGeo, ringMat);
     ring.rotation.x = Math.PI / 2;
@@ -161,7 +127,6 @@ class SkyRushGame {
     this.lobbyGroup.add(ped, ring);
     this.lobbyGroup.position.set(0, 1.5, 6.0);
 
-    // Preview Character
     this.previewChar = new Character3D(this.myAppearance, this.myName, true);
     this.lobbyGroup.add(this.previewChar.root);
     this.previewRotationY = 0;
@@ -173,19 +138,11 @@ class SkyRushGame {
     const nameInput = document.getElementById('player-name');
     nameInput.value = this.myName;
     nameInput.addEventListener('input', () => {
-      this.myName = nameInput.value.trim() || '派對之星';
-      localStorage.setItem('skyrush_name', this.myName);
+      this.myName = nameInput.value.trim() || '小法老';
+      localStorage.setItem('pyramid_name', this.myName);
       this.previewChar.updateNameTag(this.myName);
     });
 
-    const modeSelect = document.getElementById('track-mode-select');
-    modeSelect.addEventListener('change', () => {
-      this.trackMode = modeSelect.value;
-      this.world.repositionTrackMode(this.trackMode);
-      this.updateCamModeButton();
-    });
-
-    // Category Tabs switching
     const tabBtns = document.querySelectorAll('.tab-btn');
     tabBtns.forEach((btn) => {
       btn.addEventListener('click', () => {
@@ -247,23 +204,20 @@ class SkyRushGame {
 
     renderAllOptions();
 
-    // Random Look Button
     document.getElementById('btn-random-look').addEventListener('click', () => {
       sfx.spring();
       this.myAppearance = getRandomAppearance();
       this.saveAndRefreshPreview();
       renderAllOptions();
-      this.previewJumpVel = 8.5;
+      this.previewJumpVel = 8.0;
     });
 
-    // Pose Jump Button
     document.getElementById('btn-pose-jump').addEventListener('click', () => {
       sfx.jump();
-      this.previewJumpVel = 9.5;
-      this.previewChar.squash = 0.65;
+      this.previewJumpVel = 9.0;
+      this.previewChar.squash = 0.68;
     });
 
-    // Touch / Drag rotation on preview stage
     const touchZone = document.getElementById('preview-touch-zone');
     let dragging = false;
     let lastX = 0;
@@ -282,46 +236,26 @@ class SkyRushGame {
       dragging = false;
     });
 
-    // Start Game Button
     document.getElementById('btn-start-game').addEventListener('click', () => {
       sfx.init();
       this.startMatch();
     });
 
-    // Rematch & Back to Lobby buttons
     document.getElementById('btn-rematch').addEventListener('click', () => {
       this.roomSeed = this.network.sendAction('new_race');
-      this.world.buildTrack(this.roomSeed, this.trackMode);
+      this.world.buildTrack(this.roomSeed);
       this.startMatch();
     });
 
     document.getElementById('btn-back-lobby').addEventListener('click', () => {
       this.switchToLobby();
     });
-
-    // Toggle Camera/Track Mode mid-game
-    document.getElementById('btn-toggle-cam').addEventListener('click', () => {
-      this.trackMode = this.trackMode === 'spiral' ? 'tube' : 'spiral';
-      document.getElementById('track-mode-select').value = this.trackMode;
-      this.world.repositionTrackMode(this.trackMode);
-      this.updateCamModeButton();
-      this.addFeedToast(
-        this.trackMode === 'tube'
-          ? '🛸 已切換為：360° 環形管筒視角！'
-          : '🌀 已切換為：螺旋雲霄飛車視角！'
-      );
-    });
-  }
-
-  updateCamModeButton() {
-    const btn = document.getElementById('btn-toggle-cam');
-    btn.textContent = this.trackMode === 'tube' ? '🛸 管筒' : '🌀 螺旋';
   }
 
   saveAndRefreshPreview() {
-    localStorage.setItem('skyrush_appearance', JSON.stringify(this.myAppearance));
+    localStorage.setItem('pyramid_appearance', JSON.stringify(this.myAppearance));
     this.previewChar.setAppearance(this.myAppearance);
-    this.previewChar.squash = 1.22;
+    this.previewChar.squash = 1.2;
   }
 
   initControls() {
@@ -330,29 +264,32 @@ class SkyRushGame {
       if (this.state === 'racing') {
         if (e.code === 'Space' || e.code === 'KeyW' || e.code === 'ArrowUp') {
           e.preventDefault();
-          this.triggerJumpOrSlam();
+          this.triggerJump();
+        } else if (e.code === 'KeyS' || e.code === 'ArrowDown' || e.code === 'ControlLeft') {
+          e.preventDefault();
+          this.triggerCrouch(true);
         } else if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
           e.preventDefault();
           this.triggerBump();
-        } else if (e.code === 'KeyE' || e.code === 'KeyF' || e.code === 'Enter') {
-          e.preventDefault();
-          this.triggerUseItem();
         }
       }
     });
 
     window.addEventListener('keyup', (e) => {
       this.input.keys[e.code] = false;
+      if (e.code === 'KeyS' || e.code === 'ArrowDown' || e.code === 'ControlLeft') {
+        this.input.crouchHold = false;
+      }
     });
 
-    // Mobile Virtual Joystick
+    // Virtual Joystick
     const joyBase = document.getElementById('joystick-base');
     const joyKnob = document.getElementById('joystick-knob');
     let joyPointerId = null;
     let joyCenterX = 0;
 
     const updateJoystick = (clientX) => {
-      const maxOffset = 42;
+      const maxOffset = 44;
       const dx = Math.max(-maxOffset, Math.min(maxOffset, clientX - joyCenterX));
       joyKnob.style.transform = `translateX(${dx}px)`;
       this.input.steer = dx / maxOffset;
@@ -382,20 +319,30 @@ class SkyRushGame {
     joyBase.addEventListener('pointerup', resetJoystick);
     joyBase.addEventListener('pointercancel', resetJoystick);
 
-    // Touch Action Buttons
+    // Jump Button
     document.getElementById('btn-jump').addEventListener('pointerdown', (e) => {
       e.preventDefault();
-      this.triggerJumpOrSlam();
+      this.triggerJump();
     });
 
+    // Crouch Button (Tap for 0.85s crouch slide, or hold to stay crouched!)
+    const crouchBtn = document.getElementById('btn-crouch');
+    crouchBtn.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      crouchBtn.classList.add('active-hold');
+      this.triggerCrouch(true);
+    });
+    const endCrouchHold = () => {
+      crouchBtn.classList.remove('active-hold');
+      this.input.crouchHold = false;
+    };
+    crouchBtn.addEventListener('pointerup', endCrouchHold);
+    crouchBtn.addEventListener('pointercancel', endCrouchHold);
+
+    // Bump Button
     document.getElementById('btn-bump').addEventListener('pointerdown', (e) => {
       e.preventDefault();
       this.triggerBump();
-    });
-
-    document.getElementById('btn-use-item').addEventListener('pointerdown', (e) => {
-      e.preventDefault();
-      this.triggerUseItem();
     });
   }
 
@@ -403,7 +350,6 @@ class SkyRushGame {
     const statusEl = document.getElementById('online-status');
     const roomInput = document.getElementById('room-input');
 
-    // Read ?room=XXXX from URL if present
     const params = new URLSearchParams(window.location.search);
     const urlRoom = params.get('room');
     if (urlRoom) {
@@ -416,10 +362,10 @@ class SkyRushGame {
       },
       onWelcome: ({ seed }) => {
         this.roomSeed = seed;
-        this.world.buildTrack(this.roomSeed, this.trackMode);
+        this.world.buildTrack(this.roomSeed);
       },
       onPlayerJoined: (player) => {
-        this.addFeedToast(`👋 玩家 [${player.name}] 跨網連入了房間！`);
+        this.addFeedToast(`👋 [${player.name}] 加入了金字塔探險！`);
       },
       onPlayerLeft: (playerId) => {
         const rem = this.remoteRunners.get(playerId);
@@ -436,7 +382,7 @@ class SkyRushGame {
       },
       onNewRace: (newSeed) => {
         this.roomSeed = newSeed;
-        this.world.buildTrack(this.roomSeed, this.trackMode);
+        this.world.buildTrack(this.roomSeed);
       }
     });
 
@@ -456,7 +402,6 @@ class SkyRushGame {
       doJoin();
     });
 
-    // Copy Invite Link Button
     const copyBtn = document.getElementById('btn-copy-invite');
     if (copyBtn) {
       copyBtn.addEventListener('click', () => {
@@ -476,11 +421,11 @@ class SkyRushGame {
   updateRemoteRunner(playerId, st) {
     let runner = this.remoteRunners.get(playerId);
     if (!runner) {
-      const char = new Character3D(st.appearance || getRandomAppearance(), st.name || '連線玩家', false);
+      const char = new Character3D(st.appearance || getRandomAppearance(), st.name || '探險家', false);
       this.scene.add(char.root);
       runner = {
         id: playerId,
-        name: st.name || '連線玩家',
+        name: st.name || '探險家',
         isAI: false,
         isLocal: false,
         char,
@@ -489,11 +434,10 @@ class SkyRushGame {
         s: st.s || 0,
         vu: 0,
         vh: 0,
-        vs: 14,
+        vs: 12,
         isGrounded: true,
+        crouchTimer: 0,
         stunTimer: 0,
-        boostTimer: 0,
-        shieldTimer: 0,
         finished: false,
         finishTime: 0
       };
@@ -503,9 +447,8 @@ class SkyRushGame {
     runner.h = st.h ?? runner.h;
     runner.s = st.s ?? runner.s;
     runner.isGrounded = st.isGrounded ?? true;
+    runner.crouchTimer = st.crouchTimer ?? 0;
     runner.stunTimer = st.stunTimer ?? 0;
-    runner.boostTimer = st.boostTimer ?? 0;
-    runner.shieldTimer = st.shieldTimer ?? 0;
     runner.finished = st.finished ?? false;
   }
 
@@ -514,15 +457,7 @@ class SkyRushGame {
       const ds = Math.abs(this.localRunner.s - payload.s);
       const du = Math.abs(this.localRunner.u - payload.u);
       if (ds < 2.2 && du < 2.4) {
-        this.applyKnockback(this.localRunner, payload.dir * 13, 6.5, payload.byName);
-      }
-    } else if (action === 'shockwave' && this.localRunner) {
-      this.world.spawnShockwave(payload.u, payload.h, payload.s, '#ff007f');
-      const ds = Math.abs(this.localRunner.s - payload.s);
-      const du = this.localRunner.u - payload.u;
-      if (ds < 4.0 && Math.abs(du) < 4.0) {
-        const dir = du >= 0 ? 1 : -1;
-        this.applyKnockback(this.localRunner, dir * 15, 8.0, payload.byName);
+        this.applyKnockback(this.localRunner, payload.dir * 12, 5.5, payload.byName);
       }
     }
   }
@@ -543,19 +478,15 @@ class SkyRushGame {
       vh: 0,
       vs: 0,
       isGrounded: true,
-      canSlam: false,
-      isSlamming: false,
+      crouchTimer: 0,
       bumpCooldown: 0,
       stunTimer: 0,
       boostTimer: 0,
-      shieldTimer: 0,
-      item: null,
       knockouts: 0,
-      stomps: 0,
       finished: false,
       finishTime: 0,
       aiTargetU: startLane * LANE_WIDTH,
-      aiDecisionTimer: 0.2 + Math.random() * 0.5
+      aiDecisionTimer: 0.2 + Math.random() * 0.4
     };
   }
 
@@ -577,7 +508,6 @@ class SkyRushGame {
     document.getElementById('hud-screen').classList.add('active');
     document.getElementById('event-feed').innerHTML = '';
 
-    // Create Local Player
     this.localRunner = this.createRunnerObj(
       'local',
       this.myName,
@@ -586,9 +516,7 @@ class SkyRushGame {
       false,
       0
     );
-    this.updateItemHUD();
 
-    // Fill remaining slots up to 8 total runners with AI Rivals
     const lanes = [-2, -1, 1, 2, -1.5, 1.5, -0.5];
     const remoteCount = this.remoteRunners.size;
     const botCount = Math.max(0, 7 - remoteCount);
@@ -602,11 +530,10 @@ class SkyRushGame {
         true,
         lanes[i % lanes.length]
       );
-      bot.s = 2 + (i % 2) * 1.6;
+      bot.s = 2 + (i % 2) * 1.5;
       this.aiRunners.push(bot);
     }
 
-    this.matchStartTime = performance.now();
     this.state = 'countdown';
     this.runCountdown();
   }
@@ -624,7 +551,7 @@ class SkyRushGame {
         banner.textContent = count;
         sfx.countdown(false);
       } else if (count === 0) {
-        banner.textContent = 'GO! 衝刺！';
+        banner.textContent = 'GO! 出發！';
         sfx.countdown(true);
         this.state = 'racing';
         this.raceStartClock = performance.now();
@@ -642,7 +569,6 @@ class SkyRushGame {
     document.getElementById('hud-screen').classList.remove('active');
     document.getElementById('result-screen').classList.remove('active');
     document.getElementById('lobby-screen').classList.add('active');
-    document.getElementById('speed-lines').classList.add('hidden');
   }
 
   getAllRunners() {
@@ -653,65 +579,55 @@ class SkyRushGame {
     return list;
   }
 
-  // ================= PLAYER ACTIONS =================
-  triggerJumpOrSlam() {
+  // ================= JUMP, CROUCH & BUMP =================
+  triggerJump() {
     const r = this.localRunner;
     if (!r || this.state !== 'racing' || r.stunTimer > 0) return;
 
     if (r.isGrounded) {
-      r.vh = 14.2;
+      r.vh = 13.8;
       r.isGrounded = false;
-      r.canSlam = true;
-      r.isSlamming = false;
-      r.char.squash = 1.35;
+      r.crouchTimer = 0;
+      this.input.crouchHold = false;
+      r.char.squash = 1.32;
       sfx.jump();
-      this.updateJumpButtonUI(true);
-    } else if (r.canSlam && !r.isSlamming) {
-      r.vh = -26.0;
-      r.isSlamming = true;
-      r.canSlam = false;
-      r.char.squash = 0.65;
-      sfx.slam();
     }
   }
 
-  updateJumpButtonUI(inAir) {
-    const icon = document.getElementById('jump-icon');
-    const label = document.getElementById('jump-label');
-    if (inAir) {
-      icon.textContent = '⏬';
-      label.textContent = '空中下砸';
-    } else {
-      icon.textContent = '⬆️';
-      label.textContent = '跳躍';
+  triggerCrouch(hold = false) {
+    const r = this.localRunner;
+    if (!r || this.state !== 'racing' || r.stunTimer > 0) return;
+
+    if (hold) this.input.crouchHold = true;
+    r.crouchTimer = 0.85; // Each tap crouches for 0.85s (or continuously while held)
+    if (!r.isGrounded && r.vh > -18) {
+      // Fast drop to ground if pressed in air!
+      r.vh = -20.0;
     }
+    sfx.playTone(320, 180, 0.12, 'sine', 0.12);
   }
 
   triggerBump() {
     const r = this.localRunner;
     if (!r || this.state !== 'racing' || r.bumpCooldown > 0 || r.stunTimer > 0) return;
 
-    r.bumpCooldown = 1.1;
+    r.bumpCooldown = 1.0;
     const steerDir = this.getEffectiveSteer() >= 0 ? 1 : -1;
-    r.vu += steerDir * 11.5;
+    r.vu += steerDir * 10.5;
     r.char.squash = 0.72;
     sfx.bump();
-    this.world.spawnShockwave(r.u, r.h, r.s, '#00f0ff');
-
-    const tile = this.world.getTileAt(r.u, r.h, r.s);
-    const iceMult = tile && tile.type === 'ice' ? 2.1 : 1.0;
+    this.world.spawnShockwave(r.u, r.h, r.s, '#ffd166');
 
     for (const other of this.getAllRunners()) {
       if (other === r || other.finished) continue;
       const ds = Math.abs(other.s - r.s);
       const du = other.u - r.u;
-      const dh = Math.abs(other.h - r.h);
-      if (ds < 2.2 && Math.abs(du) < 2.4 && dh < 1.6) {
+      if (ds < 2.2 && Math.abs(du) < 2.3) {
         const pushDir = du >= 0 ? 1 : -1;
-        this.applyKnockback(other, pushDir * 14.5 * iceMult, 5.5, r.name);
+        this.applyKnockback(other, pushDir * 13.5, 5.0, r.name);
         r.knockouts++;
-        this.shakeIntensity = 0.35;
-        this.addFeedToast(`💥 你側撞頂飛了 [${other.name}]！`);
+        this.shakeIntensity = 0.28;
+        this.addFeedToast(`💥 你把 [${other.name}] 推向了旁邊！`);
       }
     }
 
@@ -724,108 +640,19 @@ class SkyRushGame {
     });
   }
 
-  triggerUseItem() {
-    const r = this.localRunner;
-    if (!r || !r.item || this.state !== 'racing') return;
-    this.activateRunnerItem(r, r.item);
-    r.item = null;
-    this.updateItemHUD();
-  }
-
-  activateRunnerItem(r, item) {
-    if (item.id === 'turbo') {
-      r.boostTimer = 2.8;
-      if (r.isLocal) {
-        sfx.boost();
-        this.addFeedToast('⚡ 發動【渦輪衝刺】全速前進！');
-      }
-    } else if (item.id === 'shield') {
-      r.shieldTimer = 5.5;
-      if (r.isLocal) {
-        sfx.itemPickup();
-        this.addFeedToast('🛡️ 開啟【能量護盾】免疫推擠與陷阱！');
-      }
-    } else if (item.id === 'shockwave') {
-      this.world.spawnShockwave(r.u, r.h, r.s, '#ffbe0b');
-      if (r.isLocal) {
-        sfx.slam();
-        this.shakeIntensity = 0.4;
-        this.addFeedToast('💥 引爆【震波手榴彈】震飛周圍對手！');
-        this.network.sendAction('shockwave', {
-          u: r.u,
-          h: r.h,
-          s: r.s,
-          byName: r.name
-        });
-      }
-      for (const other of this.getAllRunners()) {
-        if (other === r || other.finished) continue;
-        if (Math.abs(other.s - r.s) < 4.5 && Math.abs(other.u - r.u) < 4.5) {
-          const dir = other.u >= r.u ? 1 : -1;
-          this.applyKnockback(other, dir * 16.5, 8.5, r.name);
-          r.knockouts++;
-        }
-      }
-    } else if (item.id === 'magnet') {
-      let target = null;
-      for (const other of this.getAllRunners()) {
-        if (other !== r && other.s > r.s && (!target || other.s < target.s)) {
-          target = other;
-        }
-      }
-      r.boostTimer = 1.8;
-      if (target) {
-        target.vs *= 0.55;
-        if (r.isLocal) {
-          sfx.boost();
-          this.addFeedToast(`🧲 磁力吸盤鎖定 [${target.name}] 加速吸近！`);
-        }
-      }
-    } else if (item.id === 'slime_trap') {
-      this.world.spawnDroppedTrap(r.u, r.h, Math.max(2, r.s - 2.2), r.id);
-      if (r.isLocal) {
-        sfx.jump();
-        this.addFeedToast('🧪 在後方佈下了【黏液陷阱】！');
-      }
-    }
-  }
-
-  applyKnockback(target, vuForce, vhForce, attackerName = '') {
-    if (target.shieldTimer > 0) {
-      target.shieldTimer = Math.max(0.2, target.shieldTimer - 1.2);
-      if (target.isLocal) {
-        this.addFeedToast('🛡️ 護盾擋下了撞擊！');
-      }
-      return;
-    }
+  applyKnockback(target, vuForce, vhForce, sourceName = '') {
     target.vu = vuForce;
     target.vh = vhForce;
     target.isGrounded = false;
     target.stunTimer = 0.65;
+    target.crouchTimer = 0;
     target.char.squash = 0.55;
     if (target.isLocal) {
       sfx.bump();
-      this.shakeIntensity = 0.42;
-      if (attackerName) {
-        this.addFeedToast(`⚠️ 被 [${attackerName}] 撞飛了！`);
+      this.shakeIntensity = 0.35;
+      if (sourceName) {
+        this.addFeedToast(`⚠️ 撞上了【${sourceName}】！`);
       }
-    }
-  }
-
-  updateItemHUD() {
-    const btn = document.getElementById('btn-use-item');
-    const icon = document.getElementById('item-icon');
-    const label = document.getElementById('item-label');
-    const item = this.localRunner ? this.localRunner.item : null;
-
-    if (item) {
-      btn.classList.remove('disabled');
-      icon.textContent = item.icon;
-      label.textContent = item.name;
-    } else {
-      btn.classList.add('disabled');
-      icon.textContent = '🎲';
-      label.textContent = '無道具';
     }
   }
 
@@ -835,12 +662,12 @@ class SkyRushGame {
     div.className = 'feed-toast';
     div.textContent = text;
     feed.appendChild(div);
-    while (feed.children.length > 3) {
+    while (feed.children.length > 2) {
       feed.removeChild(feed.firstChild);
     }
     setTimeout(() => {
       if (div.parentNode === feed) feed.removeChild(div);
-    }, 2600);
+    }, 2300);
   }
 
   getEffectiveSteer() {
@@ -851,7 +678,7 @@ class SkyRushGame {
     return this.input.steer;
   }
 
-  // ================= PHYSICS & AI UPDATE =================
+  // ================= PHYSICS & TRAP COLLISIONS =================
   updateRunnerPhysics(r, dt, time) {
     if (r.finished) {
       r.char.animate(dt, time, { speed: 2, isGrounded: true });
@@ -861,17 +688,22 @@ class SkyRushGame {
     if (r.bumpCooldown > 0) r.bumpCooldown = Math.max(0, r.bumpCooldown - dt);
     if (r.stunTimer > 0) r.stunTimer = Math.max(0, r.stunTimer - dt);
     if (r.boostTimer > 0) r.boostTimer = Math.max(0, r.boostTimer - dt);
-    if (r.shieldTimer > 0) r.shieldTimer = Math.max(0, r.shieldTimer - dt);
 
-    const currentTile = this.world.getTileAt(r.u, r.h, r.s);
+    if (r.isLocal && this.input.crouchHold) {
+      r.crouchTimer = Math.max(r.crouchTimer, 0.2);
+    } else if (r.crouchTimer > 0) {
+      r.crouchTimer = Math.max(0, r.crouchTimer - dt);
+    }
+    const isCrouching = r.crouchTimer > 0 && r.isGrounded;
+
+    const currentTile = this.world.getTileAt(r.u, r.s);
     const tileType = currentTile ? currentTile.type : 'air';
 
-    let targetSpeed = 16.5;
-    if (r.boostTimer > 0) targetSpeed = 25.5;
-    else if (r.stunTimer > 0) targetSpeed = 6.5;
-    else if (tileType === 'slime' && r.isGrounded) targetSpeed = 9.0;
-    else if (tileType === 'ice') targetSpeed = 19.2;
-    else if (tileType === 'upper') targetSpeed = 20.5;
+    // Steady ~12.5 m/s pace so 2,600m takes ~3.5 - 4 minutes
+    let targetSpeed = 12.6;
+    if (r.boostTimer > 0) targetSpeed = 18.5;
+    else if (r.stunTimer > 0) targetSpeed = 4.5;
+    else if (tileType === 'quicksand' && r.isGrounded) targetSpeed = 7.2;
 
     r.vs += (targetSpeed - r.vs) * Math.min(1, dt * 6);
 
@@ -882,173 +714,100 @@ class SkyRushGame {
       steer = this.updateAIBrain(r, dt);
     }
 
-    const lateralAccel = tileType === 'ice' ? 18.0 : 32.0;
-    const lateralDamping = tileType === 'ice' ? 2.2 : 8.5;
-    const desiredVu = steer * 9.5;
-    r.vu += (desiredVu - r.vu) * Math.min(1, dt * (r.stunTimer > 0 ? 1.5 : lateralDamping));
-    if (Math.abs(steer) > 0.05 && r.stunTimer <= 0) {
-      r.vu += steer * lateralAccel * dt * 0.25;
-    }
+    const desiredVu = steer * 8.8;
+    r.vu += (desiredVu - r.vu) * Math.min(1, dt * (r.stunTimer > 0 ? 2.0 : 9.0));
 
-    r.u += r.vu * dt;
+    // Integrate lateral movement & keep inside corridor bounds
+    let nextU = r.u + r.vu * dt;
+    nextU = Math.max(-TRACK_HALF_WIDTH + 0.55, Math.min(TRACK_HALF_WIDTH - 0.55, nextU));
+
+    // Check center branch divider wall (lane 2 wall when inside Left/Right split branch)
+    const nextTile = this.world.getTileAt(nextU, r.s + 0.6);
+    if (nextTile && nextTile.type === 'wall') {
+      // Push cleanly into Left Branch or Right Branch!
+      const branchDir = r.u >= 0 ? 1 : -1;
+      nextU = branchDir * (LANE_WIDTH * 1.15);
+      r.vu = branchDir * 4.0;
+    }
+    r.u = nextU;
     r.s += r.vs * dt;
 
-    const gravity = -34.0;
-    r.vh += gravity * dt;
+    // Gravity & Floor check
+    r.vh -= 34.0 * dt;
     r.h += r.vh * dt;
 
-    const supportTile = this.world.getTileAt(r.u, r.h, r.s);
-    const withinTrackWidth = Math.abs(r.u) <= TRACK_HALF_WIDTH + 0.45;
-
-    if (withinTrackWidth && supportTile && r.h <= supportTile.deckHeight && r.vh <= 0) {
-      const wasSlamming = r.isSlamming;
-      r.h = supportTile.deckHeight;
+    const supportTile = this.world.getTileAt(r.u, r.s);
+    if (supportTile && supportTile.type !== 'wall' && r.h <= 0 && r.vh <= 0) {
+      r.h = 0;
       r.vh = 0;
       r.isGrounded = true;
-      r.canSlam = false;
-      r.isSlamming = false;
 
-      if (r.isLocal) this.updateJumpButtonUI(false);
-
-      if (wasSlamming) {
-        r.char.squash = 0.52;
-        this.world.spawnShockwave(r.u, r.h, r.s, '#ff007f');
-        if (supportTile.type === 'fragile') {
-          this.world.triggerFragileTile(supportTile.r, supportTile.lane, true);
-        }
-        for (const other of this.getAllRunners()) {
-          if (other !== r && Math.abs(other.s - r.s) < 3.8 && Math.abs(other.u - r.u) < 3.8) {
-            const dir = other.u >= r.u ? 1 : -1;
-            this.applyKnockback(other, dir * 15, 8.0, r.name);
-            r.knockouts++;
-            if (r.isLocal) this.addFeedToast(`⏬ 下砸震波彈飛了 [${other.name}]！`);
-          }
-        }
-      }
-
-      if (supportTile.type === 'fragile') {
-        if (supportTile.state === 'intact' && r.isLocal) sfx.glassCrack();
-        this.world.triggerFragileTile(supportTile.r, supportTile.lane, false);
-      } else if (supportTile.type === 'spring') {
-        r.vh = 21.5;
-        r.isGrounded = false;
-        r.canSlam = true;
-        r.char.squash = 1.45;
-        if (r.isLocal) {
-          sfx.spring();
-          this.updateJumpButtonUI(true);
-          this.addFeedToast('🚀 彈簧跳板！飛躍高空捷徑！');
-        }
+      if (supportTile.type === 'crumble') {
+        this.world.triggerCrumbleTile(supportTile.r, supportTile.lane);
       } else if (supportTile.type === 'boost') {
-        r.boostTimer = Math.max(r.boostTimer, 1.35);
+        r.boostTimer = Math.max(r.boostTimer, 1.3);
         if (r.isLocal) sfx.boost();
       }
     } else {
       r.isGrounded = false;
     }
 
-    if (r.h < -5.5) {
-      r.h = 3.2;
+    // Respawn if fallen into scorpion pit
+    if (r.h < -4.5) {
+      r.h = 2.5;
       r.vh = 0;
-      r.u = 0;
-      r.vu = 0;
-      r.stunTimer = 0.75;
+      r.u = r.u >= 0 ? LANE_WIDTH : -LANE_WIDTH;
+      r.stunTimer = 0.7;
       if (r.isLocal) {
         sfx.bump();
-        this.addFeedToast('💫 墜入深淵！已緊急傳送回賽道！');
+        this.addFeedToast('🕳️ 掉入深坑！已爬回金字塔通道！');
       }
     }
 
+    // Soft player-to-player jostling
     for (const other of this.getAllRunners()) {
       if (other === r || other.finished) continue;
-      const ds = Math.abs(other.s - r.s);
-      const du = r.u - other.u;
-      const dh = r.h - other.h;
-
-      if (ds < 1.1 && Math.abs(du) < 1.05) {
-        if (r.vh < -1.0 && dh > 0.55 && dh < 1.9) {
-          r.vh = 16.5;
-          r.canSlam = true;
-          r.stomps++;
-          other.char.squash = 0.42;
-          other.stunTimer = 1.05;
-          other.vs *= 0.4;
-          if (r.isLocal) {
-            sfx.stomp();
-            this.addFeedToast(`👟 踩扁了 [${other.name}] 觸發二段大跳！`);
-          } else if (other.isLocal) {
-            sfx.stomp();
-            this.addFeedToast(`😵 被 [${r.name}] 踩頭借力了！`);
-          }
-        } else if (Math.abs(dh) < 0.85) {
-          const push = du >= 0 ? 1 : -1;
-          r.vu += push * 14 * dt;
-          other.vu -= push * 14 * dt;
-        }
+      if (Math.abs(other.s - r.s) < 1.0 && Math.abs(other.u - r.u) < 0.95 && Math.abs(other.h - r.h) < 1.0) {
+        const push = r.u >= other.u ? 1 : -1;
+        r.vu += push * 12 * dt;
+        other.vu -= push * 12 * dt;
       }
     }
 
-    for (const obs of this.world.obstacles) {
-      if (Math.abs(obs.s - r.s) > 1.35) continue;
+    // Check Pyramid Traps (Jump vs Crouch vs Left/Right)
+    for (const trap of this.world.traps) {
+      if (Math.abs(trap.s - r.s) > 0.95 || r.stunTimer > 0) continue;
 
-      if (obs.type === 'pendulum') {
-        if (Math.abs(obs.u - r.u) < 1.45 && Math.abs(obs.h - r.h) < 1.8) {
-          const dir = r.u >= obs.u ? 1 : -1;
-          this.applyKnockback(r, dir * 16, 7.5, '巨型擺錘');
-        }
-      } else if (obs.type === 'sweeper') {
-        if (r.h < 1.15) {
-          const barAngle = obs.angle % Math.PI;
-          if (Math.abs(Math.sin(barAngle)) < 0.48) {
-            this.applyKnockback(r, (r.u >= 0 ? 1 : -1) * 10, 6.5, '旋轉激光桿');
+      if (trap.type === 'high_fire' || trap.type === 'high_gate') {
+        // High trap: hits unless Crouching (isCrouching)!
+        if (r.u >= trap.uMin && r.u <= trap.uMax) {
+          if (!isCrouching) {
+            r.s -= 1.8;
+            this.applyKnockback(r, (Math.random() - 0.5) * 6, 4.0, trap.name);
           }
         }
-      } else if (obs.type === 'bumper') {
-        if (Math.abs(obs.u - r.u) < 1.25 && r.h < 1.8) {
-          const dir = r.u >= obs.u ? 1 : -1;
-          this.applyKnockback(r, dir * 15, 5.5, '彈力撞柱');
-        }
-      }
-    }
-
-    for (const box of this.world.itemBoxes) {
-      if (!box.active) continue;
-      if (
-        Math.abs(box.s - r.s) < 1.3 &&
-        Math.abs(box.u - r.u) < 1.3 &&
-        Math.abs(box.h - (r.h + 0.8)) < 1.4
-      ) {
-        box.active = false;
-        box.mesh.visible = false;
-        box.respawnTimer = 4.0;
-        if (!r.item) {
-          r.item = ITEMS_CATALOG[Math.floor(Math.random() * ITEMS_CATALOG.length)];
-          if (r.isLocal) {
-            sfx.itemPickup();
-            this.updateItemHUD();
-            this.addFeedToast(`🎁 獲得道具：【${r.item.icon} ${r.item.name}】`);
+      } else if (trap.type === 'low_spikes' || trap.type === 'low_log') {
+        // Low ground trap: hits unless Jumping (r.h > 0.72)!
+        if (r.u >= trap.uMin && r.u <= trap.uMax) {
+          if (r.h < 0.72) {
+            r.s -= 1.8;
+            this.applyKnockback(r, (Math.random() - 0.5) * 6, 6.0, trap.name);
           }
         }
+      } else if (trap.type === 'swing_axe') {
+        if (Math.abs(trap.u - r.u) < 1.3 && Math.abs(trap.h - r.h) < 1.5) {
+          const dir = r.u >= trap.u ? 1 : -1;
+          this.applyKnockback(r, dir * 14, 6.0, trap.name);
+        }
+      } else if (trap.type === 'boulder') {
+        if (Math.abs(trap.u - r.u) < 1.25 && r.h < 1.6) {
+          const dir = r.u >= trap.u ? 1 : -1;
+          this.applyKnockback(r, dir * 13, 5.5, trap.name);
+        }
       }
     }
 
-    for (const trap of this.world.droppedTraps) {
-      if (!trap.active || trap.ownerId === r.id) continue;
-      if (
-        Math.abs(trap.s - r.s) < 1.2 &&
-        Math.abs(trap.u - r.u) < 1.2 &&
-        Math.abs(trap.h - r.h) < 1.0
-      ) {
-        trap.active = false;
-        trap.mesh.visible = false;
-        this.applyKnockback(r, (Math.random() - 0.5) * 14, 4.5, '黏液陷阱');
-      }
-    }
-
-    if (Math.random() < 0.45) {
-      this.spawnRunnerTrail(r);
-    }
-
+    // Check Finish Gate
     if (r.s >= TRACK_LENGTH && !r.finished) {
       r.finished = true;
       r.finishTime = (performance.now() - this.raceStartClock) / 1000;
@@ -1064,44 +823,48 @@ class SkyRushGame {
   syncRunnerMeshTransform(r, dt, time) {
     const tf = this.world.getTrackTransform(r.u, r.h, r.s);
     r.char.root.position.copy(tf.position);
-    r.char.root.rotation.set(tf.pitch, Math.PI + tf.yaw - r.vu * 0.03, tf.roll);
+    r.char.root.rotation.set(0, Math.PI + tf.yaw - r.vu * 0.025, 0);
     r.char.animate(dt, time, {
       speed: r.vs,
       isGrounded: r.isGrounded,
       isStunned: r.stunTimer > 0,
-      isBoosting: r.boostTimer > 0,
-      shieldActive: r.shieldTimer > 0
+      isCrouching: r.crouchTimer > 0 && r.isGrounded
     });
   }
 
   updateAIBrain(bot, dt) {
     bot.aiDecisionTimer -= dt;
     if (bot.aiDecisionTimer <= 0) {
-      bot.aiDecisionTimer = 0.22 + Math.random() * 0.35;
+      bot.aiDecisionTimer = 0.22 + Math.random() * 0.3;
 
+      // Check upcoming row for walls or gaps
       const lookRow = Math.min(this.world.rows.length - 1, Math.round((bot.s + 6) / ROW_LEN));
       const rowTiles = this.world.rows[lookRow] || [];
-      const safeLanes = rowTiles.filter((t) => t && t.state !== 'broken' && t.type !== 'gap');
+      const validTiles = rowTiles.filter(
+        (t) => t && t.state !== 'broken' && t.type !== 'gap' && t.type !== 'wall'
+      );
 
-      if (safeLanes.length > 0) {
-        const bonusTile = safeLanes.find((t) => t.type === 'spring' || t.type === 'boost');
-        const chosen = bonusTile || safeLanes[Math.floor(Math.random() * safeLanes.length)];
+      if (validTiles.length > 0) {
+        // Stay on current side if in split branch
+        const sameSide = validTiles.filter((t) => (bot.u >= 0 ? t.u >= 0 : t.u <= 0));
+        const pool = sameSide.length > 0 ? sameSide : validTiles;
+        const chosen = pool[Math.floor(Math.random() * pool.length)];
         bot.aiTargetU = chosen.u;
-      } else if (bot.isGrounded) {
-        bot.vh = 14.0;
-        bot.isGrounded = false;
       }
 
-      for (const obs of this.world.obstacles) {
-        if (obs.type === 'sweeper' && obs.s > bot.s && obs.s - bot.s < 5.0 && bot.isGrounded) {
-          bot.vh = 14.0;
-          bot.isGrounded = false;
+      // React to upcoming traps within 5.5 meters
+      for (const trap of this.world.traps) {
+        const dist = trap.s - bot.s;
+        if (dist > 0.5 && dist < 5.5) {
+          if (trap.type === 'high_fire' || trap.type === 'high_gate') {
+            if (Math.random() < 0.82) bot.crouchTimer = 0.9;
+          } else if (trap.type === 'low_spikes' || trap.type === 'low_log') {
+            if (bot.isGrounded && Math.random() < 0.82) {
+              bot.vh = 13.8;
+              bot.isGrounded = false;
+            }
+          }
         }
-      }
-
-      if (bot.item && Math.random() < 0.45) {
-        this.activateRunnerItem(bot, bot.item);
-        bot.item = null;
       }
     }
 
@@ -1109,36 +872,10 @@ class SkyRushGame {
     return Math.max(-1, Math.min(1, diff * 0.65));
   }
 
-  spawnRunnerTrail(r) {
-    const trailInfo =
-      CUSTOM_CATALOG.trails.find((t) => t.id === r.char.appearance.trail) ||
-      CUSTOM_CATALOG.trails[0];
-    const geo = new THREE.SphereGeometry(0.11, 6, 6);
-    const mat = new THREE.MeshBasicMaterial({
-      color: r.boostTimer > 0 ? '#00f0ff' : trailInfo.color,
-      transparent: true,
-      opacity: 0.75
-    });
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.copy(r.char.root.position);
-    mesh.position.y += 0.2;
-    this.particleGroup.add(mesh);
-    this.particles.push({ mesh, life: 0.35, maxLife: 0.35 });
-  }
-
-  updateParticles(dt) {
-    for (let i = this.particles.length - 1; i >= 0; i--) {
-      const p = this.particles[i];
-      p.life -= dt;
-      if (p.life <= 0) {
-        this.particleGroup.remove(p.mesh);
-        this.particles.splice(i, 1);
-      } else {
-        const ratio = p.life / p.maxLife;
-        p.mesh.scale.setScalar(ratio);
-        p.mesh.material.opacity = ratio * 0.7;
-      }
-    }
+  formatTime(sec) {
+    const m = Math.floor(sec / 60);
+    const s = Math.floor(sec % 60);
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   }
 
   updateCameraAndHUD(dt) {
@@ -1150,22 +887,17 @@ class SkyRushGame {
     document.getElementById('hud-rank').innerHTML = `${myRank}<small>/${all.length}</small>`;
 
     const pct = Math.min(100, Math.floor((r.s / TRACK_LENGTH) * 100));
-    document.getElementById('hud-distance').textContent = `${pct}%`;
+    const elapsed = this.state === 'racing' ? (performance.now() - this.raceStartClock) / 1000 : 0;
+    document.getElementById('hud-timer').textContent = `${this.formatTime(elapsed)} · ${pct}%`;
     document.getElementById('hud-progress-fill').style.width = `${pct}%`;
     document.getElementById('hud-zone-label').textContent = this.world.getZoneInfo(r.s).name;
 
-    const cdPct = (r.bumpCooldown / 1.1) * 100;
+    const cdPct = (r.bumpCooldown / 1.0) * 100;
     document.getElementById('bump-cd-fill').style.height = `${cdPct}%`;
 
-    const speedLines = document.getElementById('speed-lines');
-    if (r.boostTimer > 0 || r.vs > 20) {
-      speedLines.classList.remove('hidden');
-    } else {
-      speedLines.classList.add('hidden');
-    }
-
-    const camBackTf = this.world.getTrackTransform(r.u * 0.68, r.h + 4.3, r.s - 8.2);
-    const lookAheadTf = this.world.getTrackTransform(r.u * 0.5, r.h + 1.2, r.s + 10.0);
+    // Steady, clean, readable camera follow
+    const camBackTf = this.world.getTrackTransform(r.u * 0.55, r.h * 0.35 + 4.2, r.s - 7.8);
+    const lookAheadTf = this.world.getTrackTransform(r.u * 0.4, 1.1, r.s + 10.0);
 
     if (this.shakeIntensity > 0) {
       this.shakeIntensity = Math.max(0, this.shakeIntensity - dt * 1.8);
@@ -1175,28 +907,22 @@ class SkyRushGame {
 
     this.camera.position.lerp(camBackTf.position, Math.min(1, dt * 10));
     this.camera.lookAt(lookAheadTf.position);
-    this.camera.rotation.z = THREE.MathUtils.lerp(
-      this.camera.rotation.z,
-      -camBackTf.roll * 0.65 - r.vu * 0.015,
-      Math.min(1, dt * 8)
-    );
   }
 
   showResults() {
     this.state = 'result';
     document.getElementById('hud-screen').classList.remove('active');
     document.getElementById('result-screen').classList.add('active');
-    document.getElementById('speed-lines').classList.add('hidden');
 
     const all = this.getAllRunners().sort((a, b) => b.s - a.s);
     const myRank = all.indexOf(this.localRunner) + 1;
 
     const trophies = ['🏆', '🥈', '🥉'];
-    document.getElementById('result-trophy').textContent = trophies[myRank - 1] || '🎉';
+    document.getElementById('result-trophy').textContent = trophies[myRank - 1] || '🏺';
     document.getElementById('result-title').textContent =
-      myRank === 1 ? '第 1 名！派對總冠軍！' : `第 ${myRank} 名！精彩完賽！`;
+      myRank === 1 ? '第 1 名！奪得法老黃金寶藏！' : `第 ${myRank} 名！成功抵達寶庫！`;
     document.getElementById('result-subtitle').textContent =
-      `撞飛對手: ${this.localRunner.knockouts} 次 ｜ 踩頭二段跳: ${this.localRunner.stomps} 次`;
+      `通關時間: ${this.formatTime(this.localRunner.finishTime)} ｜ 推擠對手: ${this.localRunner.knockouts} 次`;
 
     const lbList = document.getElementById('leaderboard-list');
     lbList.innerHTML = '';
@@ -1205,7 +931,7 @@ class SkyRushGame {
       row.className = 'lb-row' + (runner.isLocal ? ' me' : '');
       const rankBadge = idx < 3 ? trophies[idx] : `#${idx + 1}`;
       const progressText = runner.finished
-        ? `${runner.finishTime.toFixed(1)}s`
+        ? this.formatTime(runner.finishTime)
         : `${Math.floor((runner.s / TRACK_LENGTH) * 100)}%`;
       row.innerHTML = `
         <span><b>${rankBadge}</b> ${runner.name}</span>
@@ -1221,9 +947,8 @@ class SkyRushGame {
     const time = now / 1000;
 
     if (this.state === 'lobby') {
-      this.camera.position.set(0, 2.85, 9.2);
-      this.camera.lookAt(0, 2.55, 6.0);
-      this.camera.rotation.z = 0;
+      this.camera.position.set(0, 2.75, 9.0);
+      this.camera.lookAt(0, 2.45, 6.0);
 
       if (this.previewY > 0 || this.previewJumpVel !== 0) {
         this.previewJumpVel -= 26 * dt;
@@ -1236,10 +961,10 @@ class SkyRushGame {
       }
       this.previewChar.root.position.y = this.previewY;
       this.previewChar.root.rotation.y = this.previewRotationY;
-      this.lobbyRing.rotation.z = time * 1.5;
+      this.lobbyRing.rotation.z = time * 1.2;
 
       this.previewChar.animate(dt, time, {
-        speed: 6,
+        speed: 5,
         isGrounded: this.previewY <= 0.01
       });
     } else {
@@ -1250,7 +975,6 @@ class SkyRushGame {
         this.aiRunners.forEach((bot) => this.updateRunnerPhysics(bot, dt, time));
         this.remoteRunners.forEach((rem) => this.syncRunnerMeshTransform(rem, dt, time));
 
-        // Broadcast local state over P2P WebRTC RoomNetwork
         if (Math.random() < 0.5) {
           const r = this.localRunner;
           this.network.sendState({
@@ -1260,9 +984,8 @@ class SkyRushGame {
             h: r.h,
             s: r.s,
             isGrounded: r.isGrounded,
+            crouchTimer: r.crouchTimer,
             stunTimer: r.stunTimer,
-            boostTimer: r.boostTimer,
-            shieldTimer: r.shieldTimer,
             finished: r.finished
           });
         }
@@ -1271,7 +994,6 @@ class SkyRushGame {
         this.aiRunners.forEach((bot) => this.syncRunnerMeshTransform(bot, dt, time));
       }
 
-      this.updateParticles(dt);
       this.updateCameraAndHUD(dt);
     }
 
@@ -1281,5 +1003,5 @@ class SkyRushGame {
 }
 
 window.addEventListener('DOMContentLoaded', () => {
-  new SkyRushGame();
+  new PyramidRushGame();
 });

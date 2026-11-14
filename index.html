@@ -3,11 +3,11 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-  <title>Sky Rush Party 3D - 多人旋轉跑酷派對</title>
+  <title>法老金字塔大逃亡 3D - 多人Q萌跑酷派對</title>
   <link rel="stylesheet" href="./styles.css" />
   <!-- PeerJS for Serverless WebRTC P2P Multiplayer on GitHub Pages -->
   <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
-  <!-- Three.js via jsDelivr CDN (GitHub Pages Ready) -->
+  <!-- Three.js via jsDelivr CDN -->
   <script type="importmap">
     {
       "imports": {
@@ -20,18 +20,14 @@
   <!-- 3D WebGL Canvas -->
   <canvas id="game-canvas"></canvas>
 
-  <!-- Speed Lines Overlay when boosting -->
-  <div id="speed-lines" class="hidden"></div>
-
   <!-- ================= LOBBY & CHARACTER CUSTOMIZER ================= -->
   <div id="lobby-screen" class="screen active">
-    <!-- Top Header -->
     <header class="lobby-header">
       <div class="brand-badge">
-        <span class="brand-icon">🌀</span>
+        <span class="brand-icon">🏺</span>
         <div>
-          <h1>SKY RUSH <span class="accent">3D</span></h1>
-          <p class="subtitle">跨網 P2P 多人旋轉跑酷・推擠派對</p>
+          <h1>PYRAMID RUSH <span class="accent">3D</span></h1>
+          <p class="subtitle">埃及金字塔・多人Q萌機關跑酷</p>
         </div>
       </div>
 
@@ -40,37 +36,32 @@
           <span class="dot online"></span>
           <span>房號:</span>
           <input id="room-input" type="text" value="PARTY1" maxlength="6" />
-          <button id="btn-join-room" class="mini-btn" title="切換房間">進房</button>
-          <button id="btn-copy-invite" class="mini-btn invite-btn" title="複製房間邀請連結傳給朋友">🔗 邀請</button>
+          <button id="btn-join-room" class="mini-btn">進房</button>
+          <button id="btn-copy-invite" class="mini-btn invite-btn">🔗 邀請</button>
         </div>
-        <div id="online-status" class="online-tag">P2P 連線中...</div>
+        <div id="online-status" class="online-tag">連線中...</div>
       </div>
     </header>
 
-    <!-- Interactive 3D Character Preview Touch Area -->
+    <!-- 3D Character Preview Touch Area -->
     <div id="preview-touch-zone" class="preview-stage-hint">
-      <div id="invite-copied-toast" class="invite-toast hidden">✅ 已複製房間連結！傳給朋友點開即可跨網同玩！</div>
-      <div class="rotate-hint">👆 左右滑動旋轉角色・點擊角色測試跳躍</div>
+      <div id="invite-copied-toast" class="invite-toast hidden">✅ 已複製房間連結！傳給朋友點開即可同場闖關！</div>
+      <div class="rotate-hint">👆 左右滑動旋轉Q萌角色</div>
       <div class="stage-quick-actions">
-        <button id="btn-random-look" class="glass-pill-btn">🎲 隨機潮搭</button>
-        <button id="btn-pose-jump" class="glass-pill-btn">✨ 動作預覽</button>
+        <button id="btn-random-look" class="glass-pill-btn">🎲 隨機Q萌造型</button>
+        <button id="btn-pose-jump" class="glass-pill-btn">✨ 跳躍預覽</button>
       </div>
     </div>
 
-    <!-- Bottom Customization & Start Panel -->
+    <!-- Bottom Customization Panel -->
     <section class="customizer-sheet">
-      <!-- Player Name & Track Mode Row -->
       <div class="player-meta-row">
         <div class="input-group">
-          <label>暱稱</label>
-          <input id="player-name" type="text" value="派對之星" maxlength="10" />
+          <label>探險家暱稱</label>
+          <input id="player-name" type="text" value="小法老" maxlength="10" />
         </div>
-        <div class="input-group">
-          <label>3D 賽道模式</label>
-          <select id="track-mode-select">
-            <option value="spiral">🌀 螺旋雲霄飛車 (多層+旋轉)</option>
-            <option value="tube">🛸 360° 環形管筒 (全周長奔跑)</option>
-          </select>
+        <div class="rule-tip-pill">
+          ⬆️ 跳過地刺滾木 ｜ ⬇️ 蹲過火焰石門 ｜ ◀▶ 左右選支線
         </div>
       </div>
 
@@ -80,143 +71,123 @@
         <button class="tab-btn" data-tab="hair">💇 髮型</button>
         <button class="tab-btn" data-tab="eyes">👀 眼睛</button>
         <button class="tab-btn" data-tab="outfit">👕 服裝</button>
-        <button class="tab-btn" data-tab="extra">🪽 背飾/尾跡</button>
+        <button class="tab-btn" data-tab="extra">🎒 背飾/星砂</button>
       </div>
 
-      <!-- Tab Content Panels -->
       <div class="tab-content-wrap">
-        <!-- 1. Gender & Skin -->
         <div class="tab-pane active" id="pane-gender">
           <div class="option-row" id="gender-options"></div>
           <div class="color-row-label">膚色選擇</div>
           <div class="color-swatches" id="skin-colors"></div>
         </div>
 
-        <!-- 2. Hair -->
         <div class="tab-pane" id="pane-hair">
           <div class="option-grid" id="hair-options"></div>
-          <div class="color-row-label">潮流髮色</div>
+          <div class="color-row-label">髮色</div>
           <div class="color-swatches" id="hair-colors"></div>
         </div>
 
-        <!-- 3. Eyes -->
         <div class="tab-pane" id="pane-eyes">
           <div class="option-grid" id="eye-options"></div>
-          <div class="color-row-label">瞳孔色彩</div>
+          <div class="color-row-label">瞳色</div>
           <div class="color-swatches" id="eye-colors"></div>
         </div>
 
-        <!-- 4. Outfit -->
         <div class="tab-pane" id="pane-outfit">
           <div class="option-grid" id="outfit-options"></div>
           <div class="color-row-label">服裝主色</div>
           <div class="color-swatches" id="outfit-colors"></div>
         </div>
 
-        <!-- 5. Back Item & Trail -->
         <div class="tab-pane" id="pane-extra">
           <div class="option-grid" id="back-options"></div>
-          <div class="color-row-label">跑動光效尾跡</div>
+          <div class="color-row-label">腳步特效</div>
           <div class="option-row" id="trail-options"></div>
         </div>
       </div>
 
-      <!-- Start Game CTA -->
       <div class="start-cta-row">
         <button id="btn-start-game" class="start-game-btn">
-          <span class="btn-shine"></span>
-          🚀 開始派對衝刺！(多人同場)
+          🏺 進入金字塔探險！(多人同場)
         </button>
       </div>
     </section>
   </div>
 
-  <!-- ================= IN-GAME HUD ================= -->
+  <!-- ================= CLEAN IN-GAME HUD ================= -->
   <div id="hud-screen" class="screen">
-    <!-- Top HUD Bar -->
     <div class="hud-top">
       <div class="hud-stat-row">
         <div class="rank-card">
-          <span class="rank-label">RANK</span>
+          <span class="rank-label">名次</span>
           <span id="hud-rank" class="rank-num">1<small>/8</small></span>
         </div>
 
         <div class="progress-container">
           <div class="progress-header">
-            <span id="hud-zone-label" class="zone-badge">🌈 霓虹起跑區</span>
-            <span id="hud-distance">0%</span>
+            <span id="hud-zone-label" class="zone-badge">🏜️ 第一章：獅身人面像沙道</span>
+            <span id="hud-timer" class="timer-badge">00:00 · 0%</span>
           </div>
           <div class="progress-bar-bg">
             <div id="hud-progress-fill" class="progress-bar-fill"></div>
-            <div id="hud-Goal-flag" class="goal-flag">🏁</div>
+            <div class="goal-flag">🏺</div>
           </div>
         </div>
-
-        <button id="btn-toggle-cam" class="cam-mode-btn" title="切換賽道旋轉視角">
-          🌀 螺旋
-        </button>
       </div>
 
-      <!-- Event / Knock Feed -->
       <div id="event-feed" class="event-feed"></div>
     </div>
 
-    <!-- Center Big Countdown / Alert -->
     <div id="center-banner" class="center-banner hidden">3</div>
 
-    <!-- Bottom Touch Controls (Mobile & Desktop Interactive) -->
+    <!-- Bottom Touch Controls: Left/Right + Crouch + Jump + Bump -->
     <div class="hud-controls">
-      <!-- Left: Virtual Steering Pad -->
+      <!-- Left: Steering Pad -->
       <div id="joystick-zone" class="joystick-zone">
         <div id="joystick-base" class="joystick-base">
-          <div class="joy-arrows"><span>◀</span><span>▶</span></div>
+          <div class="joy-arrows"><span>◀ 左移</span><span>右移 ▶</span></div>
           <div id="joystick-knob" class="joystick-knob"></div>
         </div>
-        <div class="control-caption">左右滑動走位</div>
       </div>
 
-      <!-- Right: Action Buttons (Jump/Slam, Bump, Item) -->
+      <!-- Right: Crouch (⬇️), Jump (⬆️), Bump (💥) -->
       <div class="action-buttons">
-        <!-- Item Slot Button -->
-        <button id="btn-use-item" class="act-btn item-btn disabled">
-          <span id="item-icon" class="act-icon">🎲</span>
-          <span id="item-label" class="act-text">無道具</span>
+        <button id="btn-bump" class="act-btn bump-btn">
+          <span class="act-icon">💥</span>
+          <span class="act-text">推擠</span>
+          <div id="bump-cd-fill" class="cd-overlay"></div>
         </button>
 
         <div class="lower-action-row">
-          <!-- Side Bump / Body Check Button -->
-          <button id="btn-bump" class="act-btn bump-btn">
-            <span class="act-icon">💥</span>
-            <span class="act-text">側撞推擠</span>
-            <div id="bump-cd-fill" class="cd-overlay"></div>
+          <button id="btn-crouch" class="act-btn crouch-btn">
+            <span class="act-icon">⬇️</span>
+            <span class="act-text">蹲下閃避</span>
           </button>
 
-          <!-- Jump & Ground Slam Button -->
           <button id="btn-jump" class="act-btn jump-btn">
-            <span id="jump-icon" class="act-icon">⬆️</span>
-            <span id="jump-label" class="act-text">跳躍</span>
+            <span class="act-icon">⬆️</span>
+            <span class="act-text">跳躍</span>
           </button>
         </div>
       </div>
     </div>
 
-    <!-- Desktop Keyboard Hint Bar -->
     <div class="kb-hint">
-      💻 鍵盤操作：<kbd>A</kbd><kbd>D</kbd> 或 <kbd>◀</kbd><kbd>▶</kbd> 左右移動 ｜ <kbd>Space</kbd> 跳躍 (空中再按=<b>下砸震波</b>) ｜ <kbd>Shift</kbd> 側撞推擠 ｜ <kbd>E</kbd> 使用道具
+      💻 鍵盤：<kbd>A</kbd><kbd>D</kbd> 或 <kbd>◀</kbd><kbd>▶</kbd> 左右移動 ｜ <kbd>W</kbd>/<kbd>Space</kbd>/<kbd>▲</kbd> 跳躍 ｜ <kbd>S</kbd>/<kbd>▼</kbd> 蹲下 ｜ <kbd>Shift</kbd> 推擠
     </div>
   </div>
 
-  <!-- ================= FINISH / PODIUM SCREEN ================= -->
+  <!-- ================= FINISH SCREEN ================= -->
   <div id="result-screen" class="screen">
     <div class="result-card">
       <div class="result-badge" id="result-trophy">🏆</div>
-      <h2 id="result-title">第 1 名！派對冠軍！</h2>
-      <p id="result-subtitle" class="result-stats-line">撞飛對手: 3 次 ｜ 踩頭二段跳: 2 次</p>
+      <h2 id="result-title">成功抵達法老黃金寶庫！</h2>
+      <p id="result-subtitle" class="result-stats-line">通關時間: 03:20 ｜ 推擠對手: 3 次</p>
 
       <div class="leaderboard-list" id="leaderboard-list"></div>
 
       <div class="result-actions">
-        <button id="btn-rematch" class="start-game-btn rematch-btn">🔄 再戰一局 (隨機新地形)</button>
+        <button id="btn-rematch" class="start-game-btn">🔄 再次挑戰金字塔</button>
         <button id="btn-back-lobby" class="secondary-btn">👕 返回更衣室換裝</button>
       </div>
     </div>

@@ -2,55 +2,55 @@ import * as THREE from 'three';
 
 export const CUSTOM_CATALOG = {
   genders: [
-    { id: 'boy', label: '👦 元氣少年' },
-    { id: 'girl', label: '👧 俏皮少女' }
+    { id: 'boy', label: '👦 Q萌小男生' },
+    { id: 'girl', label: '👧 Q萌小女生' }
   ],
   skinColors: [
-    '#ffe0c8', '#f5c6a5', '#e0a37c', '#b87a56', '#ffd6e7'
+    '#ffe4d0', '#f7cbb0', '#e3a882', '#c2835c', '#ffdce8'
   ],
   hairStyles: [
-    { id: 'spiky', label: '⚡ 刺蝟潮髮' },
-    { id: 'twintails', label: '🎀 活力雙馬尾' },
-    { id: 'bob', label: '🍄 齊瀏海短髮' },
-    { id: 'bun', label: '🍡 可愛雙丸子' },
-    { id: 'long', label: '🌊 飄逸長髮' },
-    { id: 'afro', label: '🔥 派對蓬蓬頭' }
+    { id: 'bob', label: '🍄 呆毛妹妹頭' },
+    { id: 'twintails', label: '🎀 Q彈雙馬尾' },
+    { id: 'spiky', label: '⚡ 元氣刺蝟頭' },
+    { id: 'bun', label: '🍡 軟萌雙丸子' },
+    { id: 'pharaoh_hat', label: '👑 小法老頭巾' },
+    { id: 'cat_ears', label: '🐱 埃及貓耳髮' }
   ],
   hairColors: [
-    '#ff4785', '#00e5ff', '#ffd000', '#38ff9c',
-    '#9d4edd', '#ff6d00', '#f8f9fa', '#212529'
+    '#3b2820', '#ffd13b', '#ff5c8a', '#4cc9f0',
+    '#ff7b29', '#9b5de5', '#52b788', '#f8f9fa'
   ],
   eyeStyles: [
-    { id: 'starry', label: '✨ 星光大眼' },
-    { id: 'cute', label: '💧 元氣圓眼' },
-    { id: 'cool', label: '😎 酷帥半睜' },
-    { id: 'happy', label: '😊 笑彎彎眼' },
-    { id: 'fire', label: '🔥 熱血鬥志' }
+    { id: 'starry', label: '✨ 閃亮水汪眼' },
+    { id: 'cute', label: '🍒 圓滾豆豆眼' },
+    { id: 'happy', label: '😊 笑瞇瞇彎眼' },
+    { id: 'cool', label: '😎 自信小酷眼' },
+    { id: 'fire', label: '🔥 探險鬥志眼' }
   ],
   eyeColors: [
-    '#00b4d8', '#ff2a85', '#ffd100', '#52b788', '#9b5de5', '#ff5400'
+    '#2b2d42', '#0096c7', '#e63946', '#d97706', '#7209b7', '#2a9d8f'
   ],
   outfits: [
-    { id: 'hoodie', label: '🧥 街頭連帽衫' },
-    { id: 'uniform', label: '🎓 學院百褶裝' },
-    { id: 'cyber', label: '🤖 未來機甲服' },
-    { id: 'dino', label: '🦖 恐龍玩偶裝' },
-    { id: 'royal', label: '👑 皇家披風裝' }
+    { id: 'explorer', label: '🧭 尋寶探險服' },
+    { id: 'pharaoh', label: '🏺 黃金小法老' },
+    { id: 'bastet', label: '🐾 貓神連身裝' },
+    { id: 'hoodie', label: '🧥 可愛連帽衫' },
+    { id: 'dino', label: '🦖 呆萌小恐龍' }
   ],
   outfitColors: [
-    '#00d2ff', '#ff3e8a', '#ffbe0b', '#39ff88',
-    '#8338ec', '#fb5607', '#ffffff', '#2b2d42'
+    '#f4a261', '#ffd166', '#4cc9f0', '#ff6b8b',
+    '#52b788', '#9b5de5', '#ffffff', '#3d405b'
   ],
   backItems: [
-    { id: 'wings', label: '🪽 天使羽翼' },
-    { id: 'jetpack', label: '🚀 噴氣背包' },
-    { id: 'halo', label: '💫 星光光環' },
+    { id: 'backpack', label: '🎒 探險小背包' },
+    { id: 'wings', label: '🪽 荷魯斯小翼' },
+    { id: 'ankh', label: '☥ 守護生命符' },
     { id: 'none', label: '🚫 無背飾' }
   ],
   trails: [
-    { id: 'rainbow', label: '🌈 彩虹流光', color: '#00f0ff' },
-    { id: 'sakura', label: '🌸 櫻花粉焰', color: '#ff5ca8' },
-    { id: 'gold', label: '⭐ 金色星塵', color: '#ffd000' }
+    { id: 'gold', label: '✨ 黃金星砂', color: '#ffd166' },
+    { id: 'sand', label: '🌪️ 沙漠旋風', color: '#f4a261' },
+    { id: 'turquoise', label: '💎 聖甲蟲藍光', color: '#4cc9f0' }
   ]
 };
 
@@ -74,15 +74,15 @@ export class Character3D {
   constructor(appearance = {}, name = 'Player', isLocal = false) {
     this.appearance = {
       gender: 'girl',
-      skinColor: '#ffe0c8',
-      hairStyle: 'twintails',
-      hairColor: '#ff4785',
+      skinColor: '#ffe4d0',
+      hairStyle: 'bob',
+      hairColor: '#3b2820',
       eyeStyle: 'starry',
-      eyeColor: '#00b4d8',
-      outfit: 'hoodie',
-      outfitColor: '#00d2ff',
-      backItem: 'wings',
-      trail: 'rainbow',
+      eyeColor: '#2b2d42',
+      outfit: 'explorer',
+      outfitColor: '#f4a261',
+      backItem: 'backpack',
+      trail: 'gold',
       ...appearance
     };
     this.name = name;
@@ -92,7 +92,6 @@ export class Character3D {
     this.bodyGroup = new THREE.Group();
     this.root.add(this.bodyGroup);
 
-    // Dynamic parts for animation
     this.headGroup = null;
     this.leftArm = null;
     this.rightArm = null;
@@ -100,19 +99,18 @@ export class Character3D {
     this.rightLeg = null;
     this.hairDynamicParts = [];
     this.backDynamicParts = [];
-    this.shieldMesh = null;
 
-    // Face canvas for dynamic expressions
+    // Face canvas for cute Chibi expressions
     this.faceCanvas = document.createElement('canvas');
     this.faceCanvas.width = 256;
     this.faceCanvas.height = 256;
     this.faceCtx = this.faceCanvas.getContext('2d');
     this.faceTexture = new THREE.CanvasTexture(this.faceCanvas);
-    this.currentExpression = 'normal'; // 'normal' | 'blink' | 'stun' | 'boost'
+    this.currentExpression = 'normal';
     this.blinkTimer = Math.random() * 3;
 
-    // Squash & stretch state
     this.squash = 1.0;
+    this.crouchAmount = 0; // 0 = standing, 1 = crouching
 
     this.buildModel();
     this.updateNameTag(this.name);
@@ -133,43 +131,35 @@ export class Character3D {
     ctx.fillStyle = skinColor;
     ctx.fillRect(0, 0, 256, 256);
 
-    // Cute rosy cheeks
-    ctx.fillStyle = 'rgba(255, 105, 145, 0.42)';
+    // Big soft pink chibi blush cheeks
+    ctx.fillStyle = 'rgba(255, 115, 145, 0.5)';
     ctx.beginPath();
-    ctx.ellipse(62, 156, 22, 12, 0, 0, Math.PI * 2);
-    ctx.ellipse(194, 156, 22, 12, 0, 0, Math.PI * 2);
+    ctx.ellipse(58, 158, 25, 14, 0, 0, Math.PI * 2);
+    ctx.ellipse(198, 158, 25, 14, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    // Eyebrows
-    ctx.strokeStyle = '#3a2318';
+    // Cute eyebrows
+    ctx.strokeStyle = '#3a2218';
     ctx.lineWidth = 6;
     ctx.lineCap = 'round';
     if (expression === 'stun') {
-      // Worried brows
       ctx.beginPath();
-      ctx.moveTo(58, 92); ctx.lineTo(94, 82);
-      ctx.moveTo(198, 92); ctx.lineTo(162, 82);
-      ctx.stroke();
-    } else if (eyeStyle === 'fire' || eyeStyle === 'cool') {
-      // Determined brows
-      ctx.beginPath();
-      ctx.moveTo(56, 82); ctx.lineTo(98, 94);
-      ctx.moveTo(200, 82); ctx.lineTo(158, 94);
+      ctx.moveTo(58, 90); ctx.lineTo(92, 80);
+      ctx.moveTo(198, 90); ctx.lineTo(164, 80);
       ctx.stroke();
     } else {
       ctx.beginPath();
-      ctx.arc(78, 94, 18, Math.PI * 1.15, Math.PI * 1.85);
+      ctx.arc(76, 92, 16, Math.PI * 1.15, Math.PI * 1.85);
       ctx.stroke();
       ctx.beginPath();
-      ctx.arc(178, 94, 18, Math.PI * 1.15, Math.PI * 1.85);
+      ctx.arc(180, 92, 16, Math.PI * 1.15, Math.PI * 1.85);
       ctx.stroke();
     }
 
-    // Eyes
     const drawEye = (cx, cy, isLeft) => {
-      if (expression === 'blink' || eyeStyle === 'happy') {
+      if (expression === 'blink' || eyeStyle === 'happy' || expression === 'crouch') {
         ctx.strokeStyle = '#241623';
-        ctx.lineWidth = 7;
+        ctx.lineWidth = 8;
         ctx.beginPath();
         ctx.arc(cx, cy + 4, 18, Math.PI * 1.1, Math.PI * 1.9);
         ctx.stroke();
@@ -177,9 +167,9 @@ export class Character3D {
       }
 
       if (expression === 'stun') {
-        // > < eyes when bumped/stunned
+        // > < dizzy eyes
         ctx.strokeStyle = '#241623';
-        ctx.lineWidth = 8;
+        ctx.lineWidth = 9;
         ctx.beginPath();
         if (isLeft) {
           ctx.moveTo(cx - 14, cy - 12);
@@ -194,73 +184,76 @@ export class Character3D {
         return;
       }
 
-      // Sclera / Eye outline
-      ctx.fillStyle = '#1b1926';
-      ctx.beginPath();
-      const ry = eyeStyle === 'cool' ? 16 : 24;
-      ctx.ellipse(cx, cy, 21, ry, 0, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Iris
-      ctx.fillStyle = eyeColor;
-      ctx.beginPath();
-      ctx.ellipse(cx, cy + 2, 16, ry - 4, 0, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Pupil
-      ctx.fillStyle = '#10121a';
-      ctx.beginPath();
-      ctx.arc(cx, cy + 2, 9, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Highlights
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath();
-      ctx.arc(cx - 6, cy - 6, 6, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.beginPath();
-      ctx.arc(cx + 6, cy + 6, 3, 0, Math.PI * 2);
-      ctx.fill();
-
-      if (eyeStyle === 'starry' || expression === 'boost') {
-        // Star sparkle in eye
-        ctx.fillStyle = '#fff59d';
+      if (eyeStyle === 'cute') {
+        // Super cute round bean eyes with big shine
+        ctx.fillStyle = '#1f1624';
         ctx.beginPath();
-        ctx.arc(cx, cy - 1, 4, 0, Math.PI * 2);
+        ctx.arc(cx, cy, 20, 0, Math.PI * 2);
         ctx.fill();
+
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(cx - 6, cy - 6, 7, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(cx + 6, cy + 6, 3.5, 0, Math.PI * 2);
+        ctx.fill();
+        return;
       }
 
-      // Eyelashes for girl
+      // Big anime/chibi eyes
+      const ry = eyeStyle === 'cool' ? 17 : 25;
+      ctx.fillStyle = '#1b1521';
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, 22, ry, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = eyeColor;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy + 2, 17, ry - 4, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#120d17';
+      ctx.beginPath();
+      ctx.arc(cx, cy + 2, 9.5, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Big sparkles
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(cx - 7, cy - 7, 7, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(cx + 6, cy + 6, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+
       if (gender === 'girl') {
-        ctx.strokeStyle = '#1b1926';
+        ctx.strokeStyle = '#1b1521';
         ctx.lineWidth = 5;
         ctx.beginPath();
         ctx.moveTo(cx + (isLeft ? -18 : 18), cy - 10);
-        ctx.lineTo(cx + (isLeft ? -26 : 26), cy - 18);
+        ctx.lineTo(cx + (isLeft ? -26 : 26), cy - 17);
         ctx.stroke();
       }
     };
 
-    drawEye(78, 126, true);
-    drawEye(178, 126, false);
+    drawEye(76, 126, true);
+    drawEye(180, 126, false);
 
-    // Mouth
-    ctx.strokeStyle = '#6b2d26';
-    ctx.fillStyle = '#ff5c77';
-    ctx.lineWidth = 5;
+    // Cute cat/chibi mouth (w shape or small happy mouth)
+    ctx.strokeStyle = '#5e2a24';
+    ctx.fillStyle = '#ff6b81';
+    ctx.lineWidth = 5.5;
     if (expression === 'stun') {
       ctx.beginPath();
       ctx.arc(128, 174, 11, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
-    } else if (expression === 'boost') {
-      ctx.beginPath();
-      ctx.arc(128, 166, 16, 0, Math.PI);
-      ctx.fill();
-      ctx.stroke();
     } else {
+      // Cute "ω" smile
       ctx.beginPath();
-      ctx.arc(128, 166, 12, 0.15 * Math.PI, 0.85 * Math.PI);
+      ctx.arc(118, 166, 10, 0.1 * Math.PI, 0.95 * Math.PI);
+      ctx.arc(138, 166, 10, 0.05 * Math.PI, 0.9 * Math.PI);
       ctx.stroke();
     }
 
@@ -268,7 +261,6 @@ export class Character3D {
   }
 
   buildModel() {
-    // Clear existing bodyGroup children
     while (this.bodyGroup.children.length > 0) {
       this.bodyGroup.remove(this.bodyGroup.children[0]);
     }
@@ -278,263 +270,209 @@ export class Character3D {
     const { gender, skinColor, hairStyle, hairColor, outfit, outfitColor, backItem } = this.appearance;
     this.drawFace('normal');
 
-    const skinMat = new THREE.MeshStandardMaterial({ color: skinColor, roughness: 0.45, metalness: 0.05 });
-    const hairMat = new THREE.MeshStandardMaterial({ color: hairColor, roughness: 0.35, metalness: 0.1 });
-    const outfitMat = new THREE.MeshStandardMaterial({ color: outfitColor, roughness: 0.35, metalness: 0.15 });
-    const whiteMat = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.3 });
-    const darkMat = new THREE.MeshStandardMaterial({ color: '#222638', roughness: 0.5 });
+    const skinMat = new THREE.MeshStandardMaterial({ color: skinColor, roughness: 0.55, metalness: 0.02 });
+    const hairMat = new THREE.MeshStandardMaterial({ color: hairColor, roughness: 0.45, metalness: 0.05 });
+    const outfitMat = new THREE.MeshStandardMaterial({ color: outfitColor, roughness: 0.45, metalness: 0.1 });
+    const goldMat = new THREE.MeshStandardMaterial({ color: '#ffd166', roughness: 0.25, metalness: 0.55 });
+    const whiteMat = new THREE.MeshStandardMaterial({ color: '#fff8eb', roughness: 0.4 });
+    const darkMat = new THREE.MeshStandardMaterial({ color: '#3b2d26', roughness: 0.6 });
 
-    // 1. HEAD GROUP (Chibi proportion: big expressive head)
+    // 1. BIG CUTE CHIBI HEAD (2-head ratio: larger, rounder head)
     this.headGroup = new THREE.Group();
-    this.headGroup.position.set(0, 1.38, 0);
+    this.headGroup.position.set(0, 1.24, 0);
     this.bodyGroup.add(this.headGroup);
 
-    // Head Sphere with Face Texture mapped to front
-    const headGeo = new THREE.SphereGeometry(0.46, 24, 24);
-    // Rotate UVs/sphere so face canvas centers on +Z
-    const headMaterials = new THREE.MeshStandardMaterial({
-      map: this.faceTexture,
-      roughness: 0.4
-    });
-    const headMesh = new THREE.Mesh(headGeo, headMaterials);
+    const headGeo = new THREE.SphereGeometry(0.52, 24, 24);
+    const headMesh = new THREE.Mesh(
+      headGeo,
+      new THREE.MeshStandardMaterial({ map: this.faceTexture, roughness: 0.5 })
+    );
+    headMesh.scale.set(1.06, 0.98, 1.02); // Slightly wide chubby cheeks
     headMesh.rotation.y = -Math.PI / 2;
     headMesh.castShadow = true;
     this.headGroup.add(headMesh);
 
-    // Ears
-    const earGeo = new THREE.SphereGeometry(0.1, 12, 12);
+    // Chubby round ears
+    const earGeo = new THREE.SphereGeometry(0.12, 12, 12);
     const leftEar = new THREE.Mesh(earGeo, skinMat);
-    leftEar.position.set(-0.44, -0.02, 0);
+    leftEar.position.set(-0.52, -0.04, 0);
     const rightEar = new THREE.Mesh(earGeo, skinMat);
-    rightEar.position.set(0.44, -0.02, 0);
+    rightEar.position.set(0.52, -0.04, 0);
     this.headGroup.add(leftEar, rightEar);
 
-    // 2. HAIR STYLES
-    const hairCapGeo = new THREE.SphereGeometry(0.485, 20, 20, 0, Math.PI * 2, 0, Math.PI * 0.58);
-    const hairCap = new THREE.Mesh(hairCapGeo, hairMat);
+    // 2. CUTE HAIR & HEADWEAR
+    const hairCap = new THREE.Mesh(
+      new THREE.SphereGeometry(0.545, 20, 20, 0, Math.PI * 2, 0, Math.PI * 0.58),
+      hairMat
+    );
     hairCap.position.y = 0.02;
-    hairCap.rotation.x = -0.18;
+    hairCap.scale.set(1.06, 1.0, 1.03);
+    hairCap.rotation.x = -0.15;
     this.headGroup.add(hairCap);
 
+    // Cute Ahoge (top sprout hair)
+    const ahoge = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.26, 8), hairMat);
+    ahoge.position.set(0.05, 0.62, 0.05);
+    ahoge.rotation.z = -0.35;
+    this.headGroup.add(ahoge);
+    this.hairDynamicParts.push(ahoge);
+
     // Front bangs
-    const bangGeo = new THREE.ConeGeometry(0.16, 0.32, 8);
-    for (let i = -1; i <= 1; i++) {
+    const bangGeo = new THREE.CapsuleGeometry(0.09, 0.16, 6, 8);
+    for (let i = -1.5; i <= 1.5; i += 1) {
       const bang = new THREE.Mesh(bangGeo, hairMat);
-      bang.position.set(i * 0.16, 0.25, 0.41);
-      bang.rotation.x = Math.PI * 0.88;
-      bang.rotation.z = i * -0.18;
+      bang.position.set(i * 0.13, 0.26, 0.48);
+      bang.rotation.z = i * -0.1;
       this.headGroup.add(bang);
     }
 
-    if (hairStyle === 'spiky') {
-      const spikeGeo = new THREE.ConeGeometry(0.18, 0.46, 8);
-      const positions = [
-        [0, 0.56, 0, 0, 0],
-        [-0.28, 0.46, -0.05, 0, 0.55],
-        [0.28, 0.46, -0.05, 0, -0.55],
-        [0, 0.42, -0.35, -0.6, 0],
-        [-0.22, 0.48, 0.2, 0.4, 0.4],
-        [0.22, 0.48, 0.2, 0.4, -0.4]
-      ];
-      positions.forEach(([x, y, z, rx, rz]) => {
-        const s = new THREE.Mesh(spikeGeo, hairMat);
-        s.position.set(x, y, z);
-        s.rotation.set(rx, 0, rz);
-        this.headGroup.add(s);
-      });
-    } else if (hairStyle === 'twintails') {
+    if (hairStyle === 'twintails') {
       [-1, 1].forEach((dir) => {
-        const tailPivot = new THREE.Group();
-        tailPivot.position.set(dir * 0.44, 0.16, -0.12);
-        const tie = new THREE.Mesh(new THREE.TorusGeometry(0.09, 0.035, 8, 12), whiteMat);
-        tailPivot.add(tie);
-
-        const tailMesh = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.68, 12), hairMat);
-        tailMesh.position.set(dir * 0.16, -0.24, -0.08);
-        tailMesh.rotation.z = dir * 0.5;
-        tailMesh.rotation.x = 0.25;
-        tailPivot.add(tailMesh);
-        this.headGroup.add(tailPivot);
-        this.hairDynamicParts.push(tailPivot);
+        const pivot = new THREE.Group();
+        pivot.position.set(dir * 0.5, 0.14, -0.1);
+        const ribbon = new THREE.Mesh(new THREE.SphereGeometry(0.11, 10, 10), goldMat);
+        const tail = new THREE.Mesh(new THREE.SphereGeometry(0.24, 14, 14), hairMat);
+        tail.scale.set(0.85, 1.35, 0.85);
+        tail.position.set(dir * 0.15, -0.22, -0.05);
+        pivot.add(ribbon, tail);
+        this.headGroup.add(pivot);
+        this.hairDynamicParts.push(pivot);
       });
     } else if (hairStyle === 'bun') {
       [-1, 1].forEach((dir) => {
-        const bun = new THREE.Mesh(new THREE.SphereGeometry(0.22, 16, 16), hairMat);
-        bun.position.set(dir * 0.36, 0.42, -0.08);
-        this.headGroup.add(bun);
-        this.hairDynamicParts.push(bun);
+        const bun = new THREE.Mesh(new THREE.SphereGeometry(0.24, 16, 16), hairMat);
+        bun.position.set(dir * 0.42, 0.46, -0.06);
+        const ring = new THREE.Mesh(new THREE.TorusGeometry(0.18, 0.035, 8, 16), goldMat);
+        ring.position.copy(bun.position);
+        ring.rotation.x = Math.PI / 2;
+        this.headGroup.add(bun, ring);
       });
-    } else if (hairStyle === 'bob') {
-      const sideGeo = new THREE.CapsuleGeometry(0.14, 0.32, 8, 12);
+    } else if (hairStyle === 'spiky') {
+      const spikeGeo = new THREE.ConeGeometry(0.18, 0.4, 8);
+      [[-0.3, 0.5, 0.5], [0, 0.58, 0], [0.3, 0.5, -0.5]].forEach(([x, y, rz]) => {
+        const s = new THREE.Mesh(spikeGeo, hairMat);
+        s.position.set(x, y, 0);
+        s.rotation.z = rz;
+        this.headGroup.add(s);
+      });
+    } else if (hairStyle === 'pharaoh_hat') {
+      // Nemes Pharaoh Headdress
+      const nemes = new THREE.Mesh(new THREE.CylinderGeometry(0.56, 0.68, 0.62, 16), goldMat);
+      nemes.position.set(0, 0.12, -0.14);
+      const cobra = new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 10), outfitMat);
+      cobra.position.set(0, 0.44, 0.52);
+      this.headGroup.add(nemes, cobra);
+    } else if (hairStyle === 'cat_ears') {
+      // Cute Egyptian Bastet Cat Ears with gold rings
+      const earCone = new THREE.ConeGeometry(0.18, 0.36, 12);
       [-1, 1].forEach((dir) => {
-        const side = new THREE.Mesh(sideGeo, hairMat);
-        side.position.set(dir * 0.4, -0.06, 0.06);
-        side.rotation.z = dir * -0.12;
-        this.headGroup.add(side);
+        const cEar = new THREE.Mesh(earCone, hairMat);
+        cEar.position.set(dir * 0.34, 0.54, 0.05);
+        cEar.rotation.z = dir * -0.25;
+        this.headGroup.add(cEar);
       });
-    } else if (hairStyle === 'long') {
-      const backHair = new THREE.Mesh(new THREE.BoxGeometry(0.78, 0.75, 0.24), hairMat);
-      backHair.position.set(0, -0.22, -0.36);
-      backHair.rotation.x = 0.18;
-      this.headGroup.add(backHair);
-      this.hairDynamicParts.push(backHair);
-    } else if (hairStyle === 'afro') {
-      const afro = new THREE.Mesh(new THREE.SphereGeometry(0.62, 20, 20), hairMat);
-      afro.position.set(0, 0.18, -0.06);
-      this.headGroup.add(afro);
     }
 
-    // 3. TORSO & OUTFITS
-    const torsoRadiusTop = gender === 'girl' ? 0.24 : 0.28;
-    const torsoRadiusBottom = gender === 'girl' ? 0.34 : 0.31;
-    const torsoGeo = new THREE.CylinderGeometry(torsoRadiusTop, torsoRadiusBottom, 0.62, 16);
-    const torsoMesh = new THREE.Mesh(torsoGeo, outfitMat);
-    torsoMesh.position.set(0, 0.72, 0);
-    torsoMesh.castShadow = true;
-    this.bodyGroup.add(torsoMesh);
+    // 3. CHUBBY CUTE TORSO & OUTFITS
+    const bodyGeo = new THREE.CapsuleGeometry(0.32, 0.24, 12, 16);
+    const bodyMesh = new THREE.Mesh(bodyGeo, outfitMat);
+    bodyMesh.position.set(0, 0.58, 0);
+    bodyMesh.castShadow = true;
+    this.bodyGroup.add(bodyMesh);
 
-    if (outfit === 'hoodie') {
-      // Hoodie pocket & white drawstring stripes
-      const hoodRing = new THREE.Mesh(new THREE.TorusGeometry(0.26, 0.06, 10, 18), outfitMat);
-      hoodRing.position.set(0, 0.98, -0.04);
-      hoodRing.rotation.x = Math.PI / 2;
-      this.bodyGroup.add(hoodRing);
-
-      const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.18, 0.06), whiteMat);
-      stripe.position.set(0, 0.72, 0.28);
-      this.bodyGroup.add(stripe);
-    } else if (outfit === 'uniform') {
-      // Sailor collar + pleated skirt/shorts
-      const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.29, 0.29, 0.14, 16), whiteMat);
-      collar.position.set(0, 0.95, 0);
-      this.bodyGroup.add(collar);
-
-      const skirt = new THREE.Mesh(new THREE.ConeGeometry(0.44, 0.32, 16), darkMat);
-      skirt.position.set(0, 0.45, 0);
-      this.bodyGroup.add(skirt);
-    } else if (outfit === 'cyber') {
-      // Glowing shoulder pads & chest core
-      const neonMat = new THREE.MeshStandardMaterial({
-        color: '#00f0ff',
-        emissive: '#00f0ff',
-        emissiveIntensity: 0.8
-      });
-      const core = new THREE.Mesh(new THREE.OctahedronGeometry(0.12), neonMat);
-      core.position.set(0, 0.78, 0.28);
-      this.bodyGroup.add(core);
-
-      [-1, 1].forEach((dir) => {
-        const pad = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.14, 0.32), outfitMat);
-        pad.position.set(dir * 0.36, 0.96, 0);
-        pad.rotation.z = dir * -0.25;
-        this.bodyGroup.add(pad);
-      });
+    if (outfit === 'explorer') {
+      // Cute Explorer pith belt & scarf
+      const scarf = new THREE.Mesh(new THREE.TorusGeometry(0.28, 0.075, 10, 18), new THREE.MeshStandardMaterial({ color: '#e63946' }));
+      scarf.position.set(0, 0.82, 0);
+      scarf.rotation.x = Math.PI / 2;
+      const belt = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.1, 16), darkMat);
+      belt.position.set(0, 0.48, 0);
+      this.bodyGroup.add(scarf, belt);
+    } else if (outfit === 'pharaoh') {
+      // Golden collar & white royal kilt
+      const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.42, 0.12, 16), goldMat);
+      collar.position.set(0, 0.8, 0);
+      const kilt = new THREE.Mesh(new THREE.ConeGeometry(0.42, 0.28, 16), whiteMat);
+      kilt.position.set(0, 0.42, 0);
+      this.bodyGroup.add(collar, kilt);
+    } else if (outfit === 'bastet') {
+      // Cute cat bell collar & cat tail
+      const collar = new THREE.Mesh(new THREE.TorusGeometry(0.27, 0.05, 8, 16), goldMat);
+      collar.position.set(0, 0.82, 0);
+      collar.rotation.x = Math.PI / 2;
+      const bell = new THREE.Mesh(new THREE.SphereGeometry(0.08, 10, 10), goldMat);
+      bell.position.set(0, 0.78, 0.32);
+      const tail = new THREE.Mesh(new THREE.CapsuleGeometry(0.06, 0.38, 8, 10), outfitMat);
+      tail.position.set(0, 0.45, -0.38);
+      tail.rotation.x = -0.8;
+      this.bodyGroup.add(collar, bell, tail);
     } else if (outfit === 'dino') {
-      // Cute Dino tail & back spikes!
-      const spikeMat = new THREE.MeshStandardMaterial({ color: '#ffd000', roughness: 0.3 });
-      const dinoTail = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.55, 10), outfitMat);
-      dinoTail.position.set(0, 0.48, -0.42);
-      dinoTail.rotation.x = -Math.PI * 0.62;
-      this.bodyGroup.add(dinoTail);
-
+      const tail = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.48, 10), outfitMat);
+      tail.position.set(0, 0.44, -0.38);
+      tail.rotation.x = -Math.PI * 0.6;
+      this.bodyGroup.add(tail);
       for (let i = 0; i < 3; i++) {
-        const sp = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.18, 8), spikeMat);
-        sp.position.set(0, 0.88 - i * 0.18, -0.32);
+        const sp = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.16, 8), goldMat);
+        sp.position.set(0, 0.78 - i * 0.15, -0.32);
         sp.rotation.x = -Math.PI / 2;
         this.bodyGroup.add(sp);
       }
-    } else if (outfit === 'royal') {
-      // Gold trim & Royal Cape
-      const goldMat = new THREE.MeshStandardMaterial({ color: '#ffd000', metalness: 0.6, roughness: 0.2 });
-      const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.16, 0.16, 8), goldMat);
-      crown.position.set(0, 0.52, 0);
-      this.headGroup.add(crown);
-
-      const cape = new THREE.Mesh(new THREE.BoxGeometry(0.68, 0.68, 0.05), new THREE.MeshStandardMaterial({ color: '#e6194b' }));
-      cape.position.set(0, 0.62, -0.32);
-      cape.rotation.x = 0.22;
-      this.bodyGroup.add(cape);
-      this.backDynamicParts.push(cape);
     }
 
-    // 4. ARMS & LEGS
-    const limbGeo = new THREE.CapsuleGeometry(0.1, 0.28, 8, 12);
-    this.leftArm = new THREE.Mesh(limbGeo, skinMat);
-    this.leftArm.position.set(-0.38, 0.72, 0);
-    this.rightArm = new THREE.Mesh(limbGeo, skinMat);
-    this.rightArm.position.set(0.38, 0.72, 0);
+    // 4. STUBBY CUTE HANDS & FEET
+    const handGeo = new THREE.SphereGeometry(0.13, 12, 12);
+    this.leftArm = new THREE.Mesh(handGeo, skinMat);
+    this.leftArm.scale.set(0.9, 1.35, 0.9);
+    this.leftArm.position.set(-0.4, 0.62, 0);
+    this.rightArm = new THREE.Mesh(handGeo, skinMat);
+    this.rightArm.scale.set(0.9, 1.35, 0.9);
+    this.rightArm.position.set(0.4, 0.62, 0);
     this.bodyGroup.add(this.leftArm, this.rightArm);
 
-    const shoeGeo = new THREE.CapsuleGeometry(0.115, 0.26, 8, 12);
-    this.leftLeg = new THREE.Mesh(shoeGeo, darkMat);
-    this.leftLeg.position.set(-0.16, 0.22, 0);
-    this.rightLeg = new THREE.Mesh(shoeGeo, darkMat);
-    this.rightLeg.position.set(0.16, 0.22, 0);
+    const footGeo = new THREE.SphereGeometry(0.14, 12, 12);
+    this.leftLeg = new THREE.Mesh(footGeo, darkMat);
+    this.leftLeg.scale.set(0.95, 0.85, 1.25);
+    this.leftLeg.position.set(-0.16, 0.14, 0.04);
+    this.rightLeg = new THREE.Mesh(footGeo, darkMat);
+    this.rightLeg.scale.set(0.95, 0.85, 1.25);
+    this.rightLeg.position.set(0.16, 0.14, 0.04);
     this.bodyGroup.add(this.leftLeg, this.rightLeg);
 
-    // 5. BACK ACCESSORIES
-    if (backItem === 'wings') {
-      const wingMat = new THREE.MeshStandardMaterial({
-        color: '#ffffff',
-        emissive: '#cceeff',
-        emissiveIntensity: 0.25,
-        roughness: 0.2
-      });
+    // 5. BACK ITEMS
+    if (backItem === 'backpack') {
+      const pack = new THREE.Mesh(
+        new THREE.BoxGeometry(0.42, 0.42, 0.24),
+        new THREE.MeshStandardMaterial({ color: '#bc6c25', roughness: 0.6 })
+      );
+      pack.position.set(0, 0.62, -0.32);
+      const scroll = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.48, 10), goldMat);
+      scroll.rotation.z = Math.PI / 2;
+      scroll.position.set(0, 0.86, -0.32);
+      this.bodyGroup.add(pack, scroll);
+    } else if (backItem === 'wings') {
       [-1, 1].forEach((dir) => {
         const wingPivot = new THREE.Group();
-        wingPivot.position.set(dir * 0.14, 0.85, -0.28);
-        const w1 = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.22, 0.05), wingMat);
-        w1.position.set(dir * 0.22, 0.08, 0);
-        w1.rotation.z = dir * 0.35;
-        const w2 = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.16, 0.05), wingMat);
-        w2.position.set(dir * 0.18, -0.08, 0);
-        w2.rotation.z = dir * 0.15;
-        wingPivot.add(w1, w2);
+        wingPivot.position.set(dir * 0.14, 0.72, -0.28);
+        const w = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.22, 0.05), goldMat);
+        w.position.set(dir * 0.2, 0.06, 0);
+        w.rotation.z = dir * 0.3;
+        wingPivot.add(w);
         this.bodyGroup.add(wingPivot);
         this.backDynamicParts.push(wingPivot);
       });
-    } else if (backItem === 'jetpack') {
-      const jetGroup = new THREE.Group();
-      jetGroup.position.set(0, 0.78, -0.32);
-      const packMat = new THREE.MeshStandardMaterial({ color: '#e0e6ed', metalness: 0.6, roughness: 0.25 });
-      const flameMat = new THREE.MeshStandardMaterial({ color: '#00f0ff', emissive: '#00f0ff', emissiveIntensity: 1.0 });
-      [-0.14, 0.14].forEach((ox) => {
-        const tank = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.42, 12), packMat);
-        tank.position.x = ox;
-        const flame = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.24, 8), flameMat);
-        flame.position.set(ox, -0.28, 0);
-        flame.rotation.x = Math.PI;
-        jetGroup.add(tank, flame);
-        this.backDynamicParts.push(flame);
-      });
-      this.bodyGroup.add(jetGroup);
-    } else if (backItem === 'halo') {
-      const haloMat = new THREE.MeshStandardMaterial({
-        color: '#ffd000',
-        emissive: '#ffaa00',
-        emissiveIntensity: 0.8
-      });
-      const halo = new THREE.Mesh(new THREE.TorusGeometry(0.32, 0.04, 10, 24), haloMat);
-      halo.position.set(0, 2.04, 0);
-      halo.rotation.x = Math.PI / 2;
-      this.bodyGroup.add(halo);
-      this.backDynamicParts.push(halo);
+    } else if (backItem === 'ankh') {
+      const ankhGroup = new THREE.Group();
+      ankhGroup.position.set(0, 0.7, -0.36);
+      const loop = new THREE.Mesh(new THREE.TorusGeometry(0.12, 0.035, 8, 16), goldMat);
+      loop.position.y = 0.15;
+      const barV = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.32, 0.05), goldMat);
+      barV.position.y = -0.08;
+      const barH = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.07, 0.05), goldMat);
+      barH.position.y = 0.02;
+      ankhGroup.add(loop, barV, barH);
+      this.bodyGroup.add(ankhGroup);
+      this.backDynamicParts.push(ankhGroup);
     }
-
-    // 6. SHIELD BUBBLE (Hidden until Shield Item active)
-    const shieldGeo = new THREE.SphereGeometry(1.15, 20, 20);
-    const shieldMat = new THREE.MeshStandardMaterial({
-      color: '#00f0ff',
-      emissive: '#00aaff',
-      emissiveIntensity: 0.5,
-      transparent: true,
-      opacity: 0.34,
-      wireframe: false
-    });
-    this.shieldMesh = new THREE.Mesh(shieldGeo, shieldMat);
-    this.shieldMesh.position.y = 0.95;
-    this.shieldMesh.visible = false;
-    this.root.add(this.shieldMesh);
   }
 
   updateNameTag(name) {
@@ -547,13 +485,13 @@ export class Character3D {
     canvas.height = 64;
     const ctx = canvas.getContext('2d');
 
-    ctx.fillStyle = this.isLocal ? 'rgba(0, 240, 255, 0.85)' : 'rgba(16, 22, 44, 0.78)';
+    ctx.fillStyle = this.isLocal ? 'rgba(255, 209, 102, 0.92)' : 'rgba(35, 24, 16, 0.78)';
     ctx.beginPath();
-    ctx.roundRect(18, 10, 220, 44, 22);
+    ctx.roundRect(22, 12, 212, 40, 20);
     ctx.fill();
 
-    ctx.font = 'bold 26px "Microsoft JhengHei", sans-serif';
-    ctx.fillStyle = this.isLocal ? '#061024' : '#ffffff';
+    ctx.font = 'bold 24px "Microsoft JhengHei", sans-serif';
+    ctx.fillStyle = this.isLocal ? '#2b1808' : '#fff8eb';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(this.name, 128, 33);
@@ -561,24 +499,24 @@ export class Character3D {
     const tex = new THREE.CanvasTexture(canvas);
     const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
     this.nameSprite = new THREE.Sprite(mat);
-    this.nameSprite.position.set(0, 2.38, 0);
-    this.nameSprite.scale.set(1.5, 0.38, 1);
+    this.nameSprite.position.set(0, 2.15, 0);
+    this.nameSprite.scale.set(1.4, 0.35, 1);
     this.root.add(this.nameSprite);
   }
 
   animate(dt, time, state = {}) {
-    const { speed = 12, isGrounded = true, isStunned = false, isBoosting = false, shieldActive = false } = state;
+    const { speed = 10, isGrounded = true, isStunned = false, isCrouching = false } = state;
 
-    // Expression & Blinking
+    // Expression & Blink
     let targetExp = 'normal';
     if (isStunned) targetExp = 'stun';
-    else if (isBoosting) targetExp = 'boost';
+    else if (isCrouching) targetExp = 'crouch';
     else {
       this.blinkTimer -= dt;
       if (this.blinkTimer <= 0) {
         targetExp = 'blink';
         if (this.blinkTimer <= -0.14) {
-          this.blinkTimer = 2.2 + Math.random() * 2.5;
+          this.blinkTimer = 2.4 + Math.random() * 2.5;
         }
       }
     }
@@ -587,50 +525,50 @@ export class Character3D {
       this.drawFace(targetExp);
     }
 
-    // Shield visibility
-    if (this.shieldMesh) {
-      this.shieldMesh.visible = !!shieldActive;
-      if (shieldActive) {
-        this.shieldMesh.rotation.y += dt * 3;
-      }
-    }
-
-    // Smooth Squash & Stretch recovery
+    // Smooth Crouch & Squash interpolation
+    const targetCrouch = isCrouching ? 1.0 : 0.0;
+    this.crouchAmount += (targetCrouch - this.crouchAmount) * Math.min(1, dt * 16);
     this.squash += (1.0 - this.squash) * Math.min(1, dt * 10);
-    const invSquash = 1 / Math.sqrt(Math.max(0.35, this.squash));
-    this.bodyGroup.scale.set(invSquash, this.squash, invSquash);
 
-    // Limb & Hair Bounce
-    const runCycle = time * Math.max(8, speed * 1.15);
-    if (isGrounded) {
-      const swing = Math.sin(runCycle) * 0.65;
-      this.leftLeg.rotation.x = swing;
-      this.rightLeg.rotation.x = -swing;
-      this.leftArm.rotation.x = -swing * 0.9;
-      this.rightArm.rotation.x = swing * 0.9;
-      this.bodyGroup.position.y = Math.abs(Math.sin(runCycle)) * 0.08;
-    } else {
-      // Airborne pose
-      this.leftLeg.rotation.x = 0.45;
-      this.rightLeg.rotation.x = -0.35;
-      this.leftArm.rotation.x = -2.2;
-      this.rightArm.rotation.x = -2.2;
+    const crouchScaleY = 1.0 - this.crouchAmount * 0.46; // Squashes down to 54% height when crouching!
+    const crouchScaleXZ = 1.0 + this.crouchAmount * 0.22;
+    const effY = this.squash * crouchScaleY;
+    const effXZ = (1 / Math.sqrt(Math.max(0.4, this.squash))) * crouchScaleXZ;
+    this.bodyGroup.scale.set(effXZ, effY, effXZ);
+
+    // Cute Chibi waddle / run / crouch pose
+    const runCycle = time * Math.max(8, speed * 1.3);
+    if (isCrouching) {
+      // Cute ducking pose: head tucks forward, hands cover head!
+      this.headGroup.rotation.x = 0.35;
+      this.leftArm.position.set(-0.34, 1.05, 0.22);
+      this.rightArm.position.set(0.34, 1.05, 0.22);
+      this.leftLeg.position.z = Math.sin(runCycle * 1.3) * 0.14;
+      this.rightLeg.position.z = -Math.sin(runCycle * 1.3) * 0.14;
       this.bodyGroup.position.y = 0;
+    } else if (isGrounded) {
+      this.headGroup.rotation.x = 0;
+      const swing = Math.sin(runCycle) * 0.22;
+      this.leftLeg.position.z = swing;
+      this.rightLeg.position.z = -swing;
+      this.leftArm.position.set(-0.4, 0.62, -swing);
+      this.rightArm.position.set(0.4, 0.62, swing);
+      this.bodyGroup.position.y = Math.abs(Math.sin(runCycle)) * 0.09;
+      this.bodyGroup.rotation.z = Math.cos(runCycle) * 0.05; // Cute chibi waddle!
+    } else {
+      // Jumping pose
+      this.headGroup.rotation.x = -0.15;
+      this.leftArm.position.set(-0.42, 0.88, 0);
+      this.rightArm.position.set(0.42, 0.88, 0);
+      this.leftLeg.position.z = -0.1;
+      this.rightLeg.position.z = 0.12;
+      this.bodyGroup.position.y = 0;
+      this.bodyGroup.rotation.z = 0;
     }
 
-    // Secondary hair physics
+    // Hair bounce
     this.hairDynamicParts.forEach((part, idx) => {
-      part.rotation.x = 0.2 + Math.sin(runCycle + idx) * 0.22;
-    });
-
-    // Back item animation (wings flap, halo bobs)
-    this.backDynamicParts.forEach((part, idx) => {
-      if (this.appearance.backItem === 'wings') {
-        const dir = idx === 0 ? -1 : 1;
-        part.rotation.y = dir * (0.25 + Math.sin(time * (isGrounded ? 10 : 22)) * 0.35);
-      } else if (this.appearance.backItem === 'halo') {
-        part.position.y = 2.04 + Math.sin(time * 4) * 0.06;
-      }
+      part.rotation.z = Math.sin(runCycle + idx) * 0.18;
     });
   }
 }
