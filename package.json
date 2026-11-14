@@ -1,0 +1,13 @@
+{
+  "name": "sky-rush-party",
+  "version": "1.0.0",
+  "description": "3D Multiplayer Party Runner & Spiral Track Game",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "three": "^0.170.0",
+    "ws": "^8.18.0"
+  }
+}
