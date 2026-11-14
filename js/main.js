@@ -10,8 +10,15 @@ import {
   TRACK_HALF_WIDTH
 } from './world.js';
 
+const ITEMS_CATALOG = [
+  { id: 'mummy', name: '木乃伊繃帶', icon: '🤕' },
+  { id: 'scarab', name: '聖甲蟲飛索', icon: '🪲' },
+  { id: 'sandstorm', name: '法老沙暴扇', icon: '🌪️' },
+  { id: 'oil', name: '滑溜神油罐', icon: '🏺' }
+];
+
 const AI_NAMES = [
-  '法老阿凱', '奈菲爾ティ', '沙漠泡芙', '荷魯斯小傑',
+  '法老阿凱', '奈菲爾蒂', '沙漠泡芙', '荷魯斯小傑',
   '貓神米亞', '聖甲蟲豆豆', '金字塔露露'
 ];
 
@@ -42,11 +49,17 @@ class PyramidRushGame {
       keys: {}
     };
 
+    // Lobby smart camera state
+    this.lobbyZoomMode = 'body'; // 'body' | 'head' | 'back'
+    this.previewRotationY = 0;
+    this.previewTargetRotY = 0;
+    this.previewJumpVel = 0;
+    this.previewY = 0;
+
     this.shakeIntensity = 0;
     this.localRunner = null;
     this.aiRunners = [];
     this.remoteRunners = new Map();
-    this.particles = [];
 
     this.initThree();
     this.initLobbyStage();
@@ -69,18 +82,17 @@ class PyramidRushGame {
     this.renderer.shadowMap.enabled = true;
 
     this.scene = new THREE.Scene();
-    // Warm, clean Egyptian desert sunset sky
     this.scene.background = new THREE.Color('#e8b878');
     this.scene.fog = new THREE.FogExp2('#e8b878', 0.009);
 
     this.camera = new THREE.PerspectiveCamera(
-      58,
+      54,
       window.innerWidth / window.innerHeight,
       0.1,
       240
     );
 
-    const hemiLight = new THREE.HemisphereLight('#fff8eb', '#8c5828', 1.25);
+    const hemiLight = new THREE.HemisphereLight('#fff8eb', '#8c5828', 1.3);
     this.scene.add(hemiLight);
 
     this.dirLight = new THREE.DirectionalLight('#fff2d6', 1.35);
@@ -90,9 +102,8 @@ class PyramidRushGame {
 
     this.world = new TrackWorld(this.scene);
     this.world.buildTrack(this.roomSeed);
-
-    this.particleGroup = new THREE.Group();
-    this.scene.add(this.particleGroup);
+    // Hide track in lobby so nothing ever blocks the character preview!
+    this.world.worldGroup.visible = false;
 
     window.addEventListener('resize', () => {
       this.camera.aspect = window.innerWidth / window.innerHeight;
@@ -105,18 +116,19 @@ class PyramidRushGame {
     this.lobbyGroup = new THREE.Group();
     this.scene.add(this.lobbyGroup);
 
-    const pedGeo = new THREE.CylinderGeometry(1.35, 1.55, 0.34, 24);
+    // Golden Pharaoh Pedestal placed in the UPPER half of the screen
+    const pedGeo = new THREE.CylinderGeometry(1.15, 1.35, 0.28, 28);
     const pedMat = new THREE.MeshStandardMaterial({
       color: '#c99352',
-      roughness: 0.6
+      roughness: 0.55
     });
     const ped = new THREE.Mesh(pedGeo, pedMat);
-    ped.position.set(0, -0.17, 0);
+    ped.position.set(0, -0.14, 0);
 
-    const ringGeo = new THREE.TorusGeometry(1.42, 0.06, 10, 32);
+    const ringGeo = new THREE.TorusGeometry(1.22, 0.055, 10, 32);
     const ringMat = new THREE.MeshStandardMaterial({
       color: '#ffd166',
-      metalness: 0.6,
+      metalness: 0.65,
       roughness: 0.25
     });
     const ring = new THREE.Mesh(ringGeo, ringMat);
@@ -125,13 +137,10 @@ class PyramidRushGame {
     this.lobbyRing = ring;
 
     this.lobbyGroup.add(ped, ring);
-    this.lobbyGroup.position.set(0, 1.5, 6.0);
+    this.lobbyGroup.position.set(0, 1.9, 0);
 
     this.previewChar = new Character3D(this.myAppearance, this.myName, true);
     this.lobbyGroup.add(this.previewChar.root);
-    this.previewRotationY = 0;
-    this.previewJumpVel = 0;
-    this.previewY = 0;
   }
 
   initCustomizerUI() {
@@ -143,6 +152,7 @@ class PyramidRushGame {
       this.previewChar.updateNameTag(this.myName);
     });
 
+    // Category Tabs with Smart Camera Zoom & Auto-Turn!
     const tabBtns = document.querySelectorAll('.tab-btn');
     tabBtns.forEach((btn) => {
       btn.addEventListener('click', () => {
@@ -152,6 +162,17 @@ class PyramidRushGame {
         const tabId = btn.dataset.tab;
         document.querySelectorAll('.tab-pane').forEach((p) => p.classList.remove('active'));
         document.getElementById(`pane-${tabId}`).classList.add('active');
+
+        if (tabId === 'hair' || tabId === 'eyes') {
+          this.lobbyZoomMode = 'head';
+          this.previewTargetRotY = 0;
+        } else if (tabId === 'extra') {
+          this.lobbyZoomMode = 'back';
+          this.previewTargetRotY = Math.PI; // Turn around to show backpack/wings!
+        } else {
+          this.lobbyZoomMode = 'body';
+          this.previewTargetRotY = 0;
+        }
       });
     });
 
@@ -209,15 +230,16 @@ class PyramidRushGame {
       this.myAppearance = getRandomAppearance();
       this.saveAndRefreshPreview();
       renderAllOptions();
-      this.previewJumpVel = 8.0;
+      this.previewJumpVel = 7.5;
     });
 
     document.getElementById('btn-pose-jump').addEventListener('click', () => {
       sfx.jump();
-      this.previewJumpVel = 9.0;
+      this.previewJumpVel = 8.5;
       this.previewChar.squash = 0.68;
     });
 
+    // Touch / Drag rotation on preview stage
     const touchZone = document.getElementById('preview-touch-zone');
     let dragging = false;
     let lastX = 0;
@@ -230,7 +252,8 @@ class PyramidRushGame {
       if (!dragging) return;
       const dx = e.clientX - lastX;
       lastX = e.clientX;
-      this.previewRotationY += dx * 0.012;
+      this.previewRotationY += dx * 0.014;
+      this.previewTargetRotY = this.previewRotationY;
     });
     window.addEventListener('pointerup', () => {
       dragging = false;
@@ -268,9 +291,9 @@ class PyramidRushGame {
         } else if (e.code === 'KeyS' || e.code === 'ArrowDown' || e.code === 'ControlLeft') {
           e.preventDefault();
           this.triggerCrouch(true);
-        } else if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
+        } else if (e.code === 'KeyE' || e.code === 'KeyF' || e.code === 'Enter') {
           e.preventDefault();
-          this.triggerBump();
+          this.triggerUseItem();
         }
       }
     });
@@ -289,7 +312,7 @@ class PyramidRushGame {
     let joyCenterX = 0;
 
     const updateJoystick = (clientX) => {
-      const maxOffset = 44;
+      const maxOffset = 46;
       const dx = Math.max(-maxOffset, Math.min(maxOffset, clientX - joyCenterX));
       joyKnob.style.transform = `translateX(${dx}px)`;
       this.input.steer = dx / maxOffset;
@@ -325,7 +348,7 @@ class PyramidRushGame {
       this.triggerJump();
     });
 
-    // Crouch Button (Tap for 0.85s crouch slide, or hold to stay crouched!)
+    // Crouch Button
     const crouchBtn = document.getElementById('btn-crouch');
     crouchBtn.addEventListener('pointerdown', (e) => {
       e.preventDefault();
@@ -339,10 +362,10 @@ class PyramidRushGame {
     crouchBtn.addEventListener('pointerup', endCrouchHold);
     crouchBtn.addEventListener('pointercancel', endCrouchHold);
 
-    // Bump Button
-    document.getElementById('btn-bump').addEventListener('pointerdown', (e) => {
+    // Item Button
+    document.getElementById('btn-use-item').addEventListener('pointerdown', (e) => {
       e.preventDefault();
-      this.triggerBump();
+      this.triggerUseItem();
     });
   }
 
@@ -438,6 +461,7 @@ class PyramidRushGame {
         isGrounded: true,
         crouchTimer: 0,
         stunTimer: 0,
+        mummyTimer: 0,
         finished: false,
         finishTime: 0
       };
@@ -449,15 +473,26 @@ class PyramidRushGame {
     runner.isGrounded = st.isGrounded ?? true;
     runner.crouchTimer = st.crouchTimer ?? 0;
     runner.stunTimer = st.stunTimer ?? 0;
+    runner.mummyTimer = st.mummyTimer ?? 0;
     runner.finished = st.finished ?? false;
   }
 
   handleRemoteAction(playerId, action, payload) {
-    if (action === 'bump' && this.localRunner) {
-      const ds = Math.abs(this.localRunner.s - payload.s);
-      const du = Math.abs(this.localRunner.u - payload.u);
-      if (ds < 2.2 && du < 2.4) {
-        this.applyKnockback(this.localRunner, payload.dir * 12, 5.5, payload.byName);
+    if (action === 'sandstorm' && this.localRunner) {
+      if (Math.abs(this.localRunner.s - payload.s) < 6.0) {
+        const dir = this.localRunner.u >= payload.u ? 1 : -1;
+        this.applyKnockback(this.localRunner, dir * 15, 5.5, `${payload.byName} 的法老沙暴`);
+      }
+    } else if (action === 'mummy' && this.localRunner) {
+      if (this.localRunner.s > payload.s && this.localRunner.s - payload.s < 18.0) {
+        this.localRunner.mummyTimer = 2.4;
+        sfx.bump();
+        this.addFeedToast(`🤕 被 [${payload.byName}] 的木乃伊繃帶纏住了！`);
+      }
+    } else if (action === 'switch_trap' && this.localRunner) {
+      this.world.spawnHighFireBeam(payload.ambushS);
+      if (Math.abs(this.localRunner.s - payload.ambushS) < 15) {
+        this.addFeedToast(`😈 前方 [${payload.byName}] 踩下陷害開關！小心火焰！`);
       }
     }
   }
@@ -479,9 +514,12 @@ class PyramidRushGame {
       vs: 0,
       isGrounded: true,
       crouchTimer: 0,
-      bumpCooldown: 0,
       stunTimer: 0,
+      mummyTimer: 0,
       boostTimer: 0,
+      slipstream: false,
+      jostleCooldown: 0,
+      item: null,
       knockouts: 0,
       finished: false,
       finishTime: 0,
@@ -502,6 +540,7 @@ class PyramidRushGame {
   startMatch() {
     this.clearMatchRunners();
     this.lobbyGroup.visible = false;
+    this.world.worldGroup.visible = true;
 
     document.getElementById('lobby-screen').classList.remove('active');
     document.getElementById('result-screen').classList.remove('active');
@@ -516,6 +555,7 @@ class PyramidRushGame {
       false,
       0
     );
+    this.updateItemHUD();
 
     const lanes = [-2, -1, 1, 2, -1.5, 1.5, -0.5];
     const remoteCount = this.remoteRunners.size;
@@ -530,7 +570,7 @@ class PyramidRushGame {
         true,
         lanes[i % lanes.length]
       );
-      bot.s = 2 + (i % 2) * 1.5;
+      bot.s = 2 + (i % 2) * 1.4;
       this.aiRunners.push(bot);
     }
 
@@ -564,6 +604,7 @@ class PyramidRushGame {
 
   switchToLobby() {
     this.clearMatchRunners();
+    this.world.worldGroup.visible = false;
     this.lobbyGroup.visible = true;
     this.state = 'lobby';
     document.getElementById('hud-screen').classList.remove('active');
@@ -579,10 +620,19 @@ class PyramidRushGame {
     return list;
   }
 
-  // ================= JUMP, CROUCH & BUMP =================
+  // ================= JUMP, CROUCH & ITEMS =================
   triggerJump() {
     const r = this.localRunner;
     if (!r || this.state !== 'racing' || r.stunTimer > 0) return;
+
+    if (r.mummyTimer > 0) {
+      // Jumping faster breaks free of Mummy Wrap!
+      r.mummyTimer = Math.max(0, r.mummyTimer - 0.55);
+      r.char.squash = 1.18;
+      sfx.jump();
+      this.addFeedToast('🤕 奮力掙脫木乃伊繃帶中！');
+      return;
+    }
 
     if (r.isGrounded) {
       r.vh = 13.8;
@@ -599,45 +649,111 @@ class PyramidRushGame {
     if (!r || this.state !== 'racing' || r.stunTimer > 0) return;
 
     if (hold) this.input.crouchHold = true;
-    r.crouchTimer = 0.85; // Each tap crouches for 0.85s (or continuously while held)
+    r.crouchTimer = 0.85;
     if (!r.isGrounded && r.vh > -18) {
-      // Fast drop to ground if pressed in air!
       r.vh = -20.0;
     }
     sfx.playTone(320, 180, 0.12, 'sine', 0.12);
   }
 
-  triggerBump() {
+  triggerUseItem() {
     const r = this.localRunner;
-    if (!r || this.state !== 'racing' || r.bumpCooldown > 0 || r.stunTimer > 0) return;
+    if (!r || !r.item || this.state !== 'racing') return;
+    this.activateRunnerItem(r, r.item);
+    r.item = null;
+    this.updateItemHUD();
+  }
 
-    r.bumpCooldown = 1.0;
-    const steerDir = this.getEffectiveSteer() >= 0 ? 1 : -1;
-    r.vu += steerDir * 10.5;
-    r.char.squash = 0.72;
-    sfx.bump();
-    this.world.spawnShockwave(r.u, r.h, r.s, '#ffd166');
-
-    for (const other of this.getAllRunners()) {
-      if (other === r || other.finished) continue;
-      const ds = Math.abs(other.s - r.s);
-      const du = other.u - r.u;
-      if (ds < 2.2 && Math.abs(du) < 2.3) {
-        const pushDir = du >= 0 ? 1 : -1;
-        this.applyKnockback(other, pushDir * 13.5, 5.0, r.name);
+  activateRunnerItem(r, item) {
+    if (item.id === 'mummy') {
+      // Wrap the runner ahead of you in mummy bandages!
+      let target = null;
+      for (const other of this.getAllRunners()) {
+        if (other !== r && !other.finished && other.s > r.s && (!target || other.s < target.s)) {
+          target = other;
+        }
+      }
+      if (target) {
+        target.mummyTimer = 2.5;
+        target.vs *= 0.5;
         r.knockouts++;
-        this.shakeIntensity = 0.28;
-        this.addFeedToast(`💥 你把 [${other.name}] 推向了旁邊！`);
+        if (r.isLocal) {
+          sfx.stomp();
+          this.addFeedToast(`🤕 丟出【木乃伊繃帶】纏住了 [${target.name}]！`);
+          this.network.sendAction('mummy', { s: r.s, byName: r.name });
+        } else if (target.isLocal) {
+          sfx.bump();
+          this.addFeedToast(`🤕 被 [${r.name}] 的木乃伊繃帶纏住了！(連按跳躍掙脫)`);
+        }
+      } else {
+        r.boostTimer = 1.6;
+        if (r.isLocal) this.addFeedToast('🤕 前方無人，繃帶化為加速衝刺！');
+      }
+    } else if (item.id === 'scarab') {
+      // Grapple to runner ahead: pull yourself forward & yank them back!
+      let target = null;
+      for (const other of this.getAllRunners()) {
+        if (other !== r && !other.finished && other.s > r.s && (!target || other.s < target.s)) {
+          target = other;
+        }
+      }
+      r.boostTimer = 2.2;
+      if (target) {
+        target.vs *= 0.45;
+        target.stunTimer = 0.5;
+        r.knockouts++;
+        if (r.isLocal) {
+          sfx.boost();
+          this.addFeedToast(`🪲 【聖甲蟲飛索】拉住 [${target.name}] 強力超車！`);
+        } else if (target.isLocal) {
+          sfx.bump();
+          this.addFeedToast(`🪲 被 [${r.name}] 的聖甲蟲飛索往後扯了！`);
+        }
+      } else if (r.isLocal) {
+        sfx.boost();
+        this.addFeedToast('🪲 聖甲蟲飛索全速推進！');
+      }
+    } else if (item.id === 'sandstorm') {
+      // Blow all nearby runners strongly sideways into traps/pits!
+      this.world.spawnShockwave(r.u, r.h, r.s, '#ffd166');
+      if (r.isLocal) {
+        sfx.slam();
+        this.shakeIntensity = 0.35;
+        this.addFeedToast('🌪️ 揮動【法老沙暴扇】把周圍對手全部吹歪！');
+        this.network.sendAction('sandstorm', { u: r.u, s: r.s, byName: r.name });
+      }
+      for (const other of this.getAllRunners()) {
+        if (other === r || other.finished) continue;
+        if (Math.abs(other.s - r.s) < 6.0) {
+          const dir = other.u >= r.u ? 1 : -1;
+          this.applyKnockback(other, dir * 16.0, 5.5, `${r.name} 的沙暴扇`);
+          r.knockouts++;
+        }
+      }
+    } else if (item.id === 'oil') {
+      this.world.spawnOilSlick(r.u, Math.max(3, r.s - 2.2), r.id);
+      if (r.isLocal) {
+        sfx.jump();
+        this.addFeedToast('🏺 在身後倒下了【滑溜神油】陷害追兵！');
       }
     }
+  }
 
-    this.network.sendAction('bump', {
-      u: r.u,
-      h: r.h,
-      s: r.s,
-      dir: steerDir,
-      byName: r.name
-    });
+  updateItemHUD() {
+    const btn = document.getElementById('btn-use-item');
+    const icon = document.getElementById('item-icon');
+    const label = document.getElementById('item-label');
+    const item = this.localRunner ? this.localRunner.item : null;
+
+    if (item) {
+      btn.classList.remove('disabled');
+      icon.textContent = item.icon;
+      label.textContent = item.name;
+    } else {
+      btn.classList.add('disabled');
+      icon.textContent = '🏺';
+      label.textContent = '無寶壺道具';
+    }
   }
 
   applyKnockback(target, vuForce, vhForce, sourceName = '') {
@@ -651,7 +767,7 @@ class PyramidRushGame {
       sfx.bump();
       this.shakeIntensity = 0.35;
       if (sourceName) {
-        this.addFeedToast(`⚠️ 撞上了【${sourceName}】！`);
+        this.addFeedToast(`⚠️ 遭受到【${sourceName}】衝擊！`);
       }
     }
   }
@@ -678,16 +794,17 @@ class PyramidRushGame {
     return this.input.steer;
   }
 
-  // ================= PHYSICS & TRAP COLLISIONS =================
+  // ================= PHYSICS, COLLISION JOSTLING & TRAPS =================
   updateRunnerPhysics(r, dt, time) {
     if (r.finished) {
       r.char.animate(dt, time, { speed: 2, isGrounded: true });
       return;
     }
 
-    if (r.bumpCooldown > 0) r.bumpCooldown = Math.max(0, r.bumpCooldown - dt);
     if (r.stunTimer > 0) r.stunTimer = Math.max(0, r.stunTimer - dt);
+    if (r.mummyTimer > 0) r.mummyTimer = Math.max(0, r.mummyTimer - dt);
     if (r.boostTimer > 0) r.boostTimer = Math.max(0, r.boostTimer - dt);
+    if (r.jostleCooldown > 0) r.jostleCooldown = Math.max(0, r.jostleCooldown - dt);
 
     if (r.isLocal && this.input.crouchHold) {
       r.crouchTimer = Math.max(r.crouchTimer, 0.2);
@@ -696,14 +813,36 @@ class PyramidRushGame {
     }
     const isCrouching = r.crouchTimer > 0 && r.isGrounded;
 
+    // Check Slipstream (尾流跟風加速): running 1.5m to 11m behind any runner in a nearby lane
+    r.slipstream = false;
+    for (const other of this.getAllRunners()) {
+      if (other !== r && !other.finished) {
+        const ds = other.s - r.s;
+        if (ds > 1.5 && ds < 11.0 && Math.abs(other.u - r.u) < 2.2) {
+          r.slipstream = true;
+          break;
+        }
+      }
+    }
+
     const currentTile = this.world.getTileAt(r.u, r.s);
     const tileType = currentTile ? currentTile.type : 'air';
 
-    // Steady ~12.5 m/s pace so 2,600m takes ~3.5 - 4 minutes
+    // Target forward speed
     let targetSpeed = 12.6;
-    if (r.boostTimer > 0) targetSpeed = 18.5;
-    else if (r.stunTimer > 0) targetSpeed = 4.5;
+    if (r.boostTimer > 0) targetSpeed = 18.8;
+    else if (r.mummyTimer > 0) targetSpeed = 7.0;
+    else if (r.stunTimer > 0) targetSpeed = 4.8;
     else if (tileType === 'quicksand' && r.isGrounded) targetSpeed = 7.2;
+    else if (tileType === 'gold_bridge') targetSpeed = 14.8;
+    else if (r.slipstream) targetSpeed = 14.6;
+
+    // Subtle rubber-banding for AI bots so the 8-player pack stays tightly competitive!
+    if (r.isAI && this.localRunner) {
+      const gap = this.localRunner.s - r.s;
+      if (gap > 16) targetSpeed += 2.8;
+      else if (gap < -18) targetSpeed -= 1.8;
+    }
 
     r.vs += (targetSpeed - r.vs) * Math.min(1, dt * 6);
 
@@ -714,20 +853,18 @@ class PyramidRushGame {
       steer = this.updateAIBrain(r, dt);
     }
 
-    const desiredVu = steer * 8.8;
-    r.vu += (desiredVu - r.vu) * Math.min(1, dt * (r.stunTimer > 0 ? 2.0 : 9.0));
+    const desiredVu = steer * 9.6;
+    r.vu += (desiredVu - r.vu) * Math.min(1, dt * (r.stunTimer > 0 ? 2.0 : 8.5));
 
-    // Integrate lateral movement & keep inside corridor bounds
     let nextU = r.u + r.vu * dt;
     nextU = Math.max(-TRACK_HALF_WIDTH + 0.55, Math.min(TRACK_HALF_WIDTH - 0.55, nextU));
 
-    // Check center branch divider wall (lane 2 wall when inside Left/Right split branch)
+    // Split Branch Center Divider Wall check
     const nextTile = this.world.getTileAt(nextU, r.s + 0.6);
     if (nextTile && nextTile.type === 'wall') {
-      // Push cleanly into Left Branch or Right Branch!
       const branchDir = r.u >= 0 ? 1 : -1;
       nextU = branchDir * (LANE_WIDTH * 1.15);
-      r.vu = branchDir * 4.0;
+      r.vu = branchDir * 4.5;
     }
     r.u = nextU;
     r.s += r.vs * dt;
@@ -745,14 +882,14 @@ class PyramidRushGame {
       if (supportTile.type === 'crumble') {
         this.world.triggerCrumbleTile(supportTile.r, supportTile.lane);
       } else if (supportTile.type === 'boost') {
-        r.boostTimer = Math.max(r.boostTimer, 1.3);
+        r.boostTimer = Math.max(r.boostTimer, 1.35);
         if (r.isLocal) sfx.boost();
       }
     } else {
       r.isGrounded = false;
     }
 
-    // Respawn if fallen into scorpion pit
+    // Respawn if fallen into pit
     if (r.h < -4.5) {
       r.h = 2.5;
       r.vh = 0;
@@ -764,22 +901,113 @@ class PyramidRushGame {
       }
     }
 
-    // Soft player-to-player jostling
+    // ================= NATURAL LEFT/RIGHT CONTACT JOSTLING & HEAD STOMP =================
     for (const other of this.getAllRunners()) {
       if (other === r || other.finished) continue;
-      if (Math.abs(other.s - r.s) < 1.0 && Math.abs(other.u - r.u) < 0.95 && Math.abs(other.h - r.h) < 1.0) {
-        const push = r.u >= other.u ? 1 : -1;
-        r.vu += push * 12 * dt;
-        other.vu -= push * 12 * dt;
+      const ds = Math.abs(other.s - r.s);
+      const du = other.u - r.u; // > 0 means 'other' is to the right of 'r'
+      const dh = r.h - other.h;
+
+      if (ds < 1.15 && Math.abs(du) < 1.08) {
+        // 1. Head Stomp: landing on top of another runner!
+        if (r.vh < -1.0 && dh > 0.52 && dh < 1.8) {
+          r.vh = 15.5;
+          r.knockouts++;
+          other.char.squash = 0.42;
+          other.stunTimer = 1.0;
+          other.vs *= 0.45;
+          if (r.isLocal) {
+            sfx.stomp();
+            this.addFeedToast(`👟 踩扁了 [${other.name}] 借力大跳！`);
+          } else if (other.isLocal) {
+            sfx.stomp();
+            this.addFeedToast(`😵 被 [${r.name}] 踩在頭上了！`);
+          }
+        } else if (Math.abs(dh) < 0.85) {
+          // 2. Left/Right Body Contact Physics: steering into someone transfers strong lateral push!
+          const pushDir = du >= 0 ? 1 : -1;
+          const myPushSpeed = r.vu * pushDir; // positive if 'r' is actively moving toward 'other'
+
+          if (myPushSpeed > 1.2 && r.jostleCooldown <= 0) {
+            // Active lateral shoulder bump by moving left/right into rival!
+            const transfer = 9.5 + myPushSpeed * 0.85;
+            other.vu = pushDir * transfer;
+            other.char.squash = 0.75;
+            r.vu = -pushDir * 3.2; // Slight recoil
+            r.jostleCooldown = 0.35;
+            r.knockouts++;
+
+            if (r.isLocal || other.isLocal) {
+              sfx.bump();
+              this.world.spawnShockwave((r.u + other.u) / 2, r.h, r.s, '#ffd166');
+            }
+            if (r.isLocal) {
+              this.addFeedToast(`💥 左右卡位把 [${other.name}] 擠開了！`);
+            } else if (other.isLocal) {
+              this.addFeedToast(`⚠️ 被 [${r.name}] 從側面擠歪了！`);
+            }
+          } else {
+            // Gentle separation so models don't overlap
+            r.vu -= pushDir * 10 * dt;
+            other.vu += pushDir * 10 * dt;
+          }
+        }
       }
     }
 
-    // Check Pyramid Traps (Jump vs Crouch vs Left/Right)
+    // ================= FLOOR TRAP SWITCHES (踩開關陷害後人) =================
+    for (const sw of this.world.trapSwitches) {
+      if (sw.triggered) continue;
+      if (Math.abs(sw.s - r.s) < 1.1 && Math.abs(sw.u - r.u) < 1.0 && r.h < 0.5) {
+        if (this.world.activateTrapSwitch(sw)) {
+          r.knockouts++;
+          const ambushS = Math.max(8, sw.s - 4.8);
+          if (r.isLocal) {
+            sfx.slam();
+            this.addFeedToast('😈 踩下【陷害開關】！後方降下火焰橫樑！');
+            this.network.sendAction('switch_trap', { ambushS, byName: r.name });
+          } else if (this.localRunner && this.localRunner.s < sw.s && sw.s - this.localRunner.s < 18) {
+            sfx.glassCrack();
+            this.addFeedToast(`⚠️ 前方 [${r.name}] 踩下陷害開關！小心火焰！`);
+          }
+        }
+      }
+    }
+
+    // ================= GOLDEN ITEM JARS PICKUP =================
+    for (const jar of this.world.itemJars) {
+      if (!jar.active) continue;
+      if (Math.abs(jar.s - r.s) < 1.25 && Math.abs(jar.u - r.u) < 1.2 && r.h < 1.6) {
+        jar.active = false;
+        jar.mesh.visible = false;
+        jar.respawnTimer = 4.5;
+        if (!r.item) {
+          r.item = ITEMS_CATALOG[Math.floor(Math.random() * ITEMS_CATALOG.length)];
+          if (r.isLocal) {
+            sfx.itemPickup();
+            this.updateItemHUD();
+            this.addFeedToast(`🏺 拾獲寶壺：【${r.item.icon} ${r.item.name}】`);
+          }
+        }
+      }
+    }
+
+    // ================= SLIPPERY OIL SLICKS =================
+    for (const oil of this.world.oilSlicks) {
+      if (!oil.active || oil.ownerId === r.id) continue;
+      if (Math.abs(oil.s - r.s) < 1.2 && Math.abs(oil.u - r.u) < 1.2 && r.h < 0.6) {
+        oil.active = false;
+        oil.mesh.visible = false;
+        const slideDir = Math.random() < 0.5 ? -1 : 1;
+        this.applyKnockback(r, slideDir * 15, 3.5, '滑溜神油');
+      }
+    }
+
+    // ================= PYRAMID TRAPS =================
     for (const trap of this.world.traps) {
       if (Math.abs(trap.s - r.s) > 0.95 || r.stunTimer > 0) continue;
 
       if (trap.type === 'high_fire' || trap.type === 'high_gate') {
-        // High trap: hits unless Crouching (isCrouching)!
         if (r.u >= trap.uMin && r.u <= trap.uMax) {
           if (!isCrouching) {
             r.s -= 1.8;
@@ -787,7 +1015,6 @@ class PyramidRushGame {
           }
         }
       } else if (trap.type === 'low_spikes' || trap.type === 'low_log') {
-        // Low ground trap: hits unless Jumping (r.h > 0.72)!
         if (r.u >= trap.uMin && r.u <= trap.uMax) {
           if (r.h < 0.72) {
             r.s -= 1.8;
@@ -823,21 +1050,21 @@ class PyramidRushGame {
   syncRunnerMeshTransform(r, dt, time) {
     const tf = this.world.getTrackTransform(r.u, r.h, r.s);
     r.char.root.position.copy(tf.position);
-    r.char.root.rotation.set(0, Math.PI + tf.yaw - r.vu * 0.025, 0);
+    r.char.root.rotation.set(0, Math.PI + tf.yaw - r.vu * 0.03, 0);
     r.char.animate(dt, time, {
       speed: r.vs,
       isGrounded: r.isGrounded,
       isStunned: r.stunTimer > 0,
-      isCrouching: r.crouchTimer > 0 && r.isGrounded
+      isCrouching: r.crouchTimer > 0 && r.isGrounded,
+      isMummified: r.mummyTimer > 0
     });
   }
 
   updateAIBrain(bot, dt) {
     bot.aiDecisionTimer -= dt;
     if (bot.aiDecisionTimer <= 0) {
-      bot.aiDecisionTimer = 0.22 + Math.random() * 0.3;
+      bot.aiDecisionTimer = 0.2 + Math.random() * 0.28;
 
-      // Check upcoming row for walls or gaps
       const lookRow = Math.min(this.world.rows.length - 1, Math.round((bot.s + 6) / ROW_LEN));
       const rowTiles = this.world.rows[lookRow] || [];
       const validTiles = rowTiles.filter(
@@ -845,31 +1072,45 @@ class PyramidRushGame {
       );
 
       if (validTiles.length > 0) {
-        // Stay on current side if in split branch
-        const sameSide = validTiles.filter((t) => (bot.u >= 0 ? t.u >= 0 : t.u <= 0));
-        const pool = sameSide.length > 0 ? sameSide : validTiles;
-        const chosen = pool[Math.floor(Math.random() * pool.length)];
-        bot.aiTargetU = chosen.u;
+        // Sometimes AI actively steers toward a nearby player to jostle them!
+        let targetChosen = false;
+        if (this.localRunner && Math.abs(this.localRunner.s - bot.s) < 2.5 && Math.random() < 0.35) {
+          bot.aiTargetU = this.localRunner.u;
+          targetChosen = true;
+        }
+        if (!targetChosen) {
+          const sameSide = validTiles.filter((t) => (bot.u >= 0 ? t.u >= 0 : t.u <= 0));
+          const pool = sameSide.length > 0 ? sameSide : validTiles;
+          const bonus = pool.find((t) => t.type === 'gold_bridge' || t.type === 'boost');
+          const chosen = bonus || pool[Math.floor(Math.random() * pool.length)];
+          bot.aiTargetU = chosen.u;
+        }
       }
 
-      // React to upcoming traps within 5.5 meters
+      // React to upcoming traps
       for (const trap of this.world.traps) {
         const dist = trap.s - bot.s;
         if (dist > 0.5 && dist < 5.5) {
           if (trap.type === 'high_fire' || trap.type === 'high_gate') {
             if (Math.random() < 0.82) bot.crouchTimer = 0.9;
           } else if (trap.type === 'low_spikes' || trap.type === 'low_log') {
-            if (bot.isGrounded && Math.random() < 0.82) {
+            if (bot.isGrounded && bot.mummyTimer <= 0 && Math.random() < 0.82) {
               bot.vh = 13.8;
               bot.isGrounded = false;
             }
           }
         }
       }
+
+      // Use item if holding one
+      if (bot.item && Math.random() < 0.45) {
+        this.activateRunnerItem(bot, bot.item);
+        bot.item = null;
+      }
     }
 
     const diff = bot.aiTargetU - bot.u;
-    return Math.max(-1, Math.min(1, diff * 0.65));
+    return Math.max(-1, Math.min(1, diff * 0.7));
   }
 
   formatTime(sec) {
@@ -892,10 +1133,19 @@ class PyramidRushGame {
     document.getElementById('hud-progress-fill').style.width = `${pct}%`;
     document.getElementById('hud-zone-label').textContent = this.world.getZoneInfo(r.s).name;
 
-    const cdPct = (r.bumpCooldown / 1.0) * 100;
-    document.getElementById('bump-cd-fill').style.height = `${cdPct}%`;
+    // Status pill (Mummy wrapped vs Slipstream speed boost)
+    const statusPill = document.getElementById('hud-status-pill');
+    if (r.mummyTimer > 0) {
+      statusPill.textContent = '🤕 木乃伊纏身減速中！(連按跳躍掙脫)';
+      statusPill.classList.remove('hidden');
+    } else if (r.slipstream) {
+      statusPill.textContent = '💨 尾流跟風加速中！趁機左右超車擠人！';
+      statusPill.classList.remove('hidden');
+    } else {
+      statusPill.classList.add('hidden');
+    }
 
-    // Steady, clean, readable camera follow
+    // Steady, clean camera follow
     const camBackTf = this.world.getTrackTransform(r.u * 0.55, r.h * 0.35 + 4.2, r.s - 7.8);
     const lookAheadTf = this.world.getTrackTransform(r.u * 0.4, 1.1, r.s + 10.0);
 
@@ -922,7 +1172,7 @@ class PyramidRushGame {
     document.getElementById('result-title').textContent =
       myRank === 1 ? '第 1 名！奪得法老黃金寶藏！' : `第 ${myRank} 名！成功抵達寶庫！`;
     document.getElementById('result-subtitle').textContent =
-      `通關時間: ${this.formatTime(this.localRunner.finishTime)} ｜ 推擠對手: ${this.localRunner.knockouts} 次`;
+      `通關時間: ${this.formatTime(this.localRunner.finishTime)} ｜ 陷害與擠人: ${this.localRunner.knockouts} 次`;
 
     const lbList = document.getElementById('leaderboard-list');
     lbList.innerHTML = '';
@@ -947,8 +1197,21 @@ class PyramidRushGame {
     const time = now / 1000;
 
     if (this.state === 'lobby') {
-      this.camera.position.set(0, 2.75, 9.0);
-      this.camera.lookAt(0, 2.45, 6.0);
+      // Smart Lobby Camera: keeps character in the UPPER half of the screen (100% above UI sheet!)
+      // LookAt y is lower than character center so character projects into the top half of viewport!
+      let targetCamPos = new THREE.Vector3(0, 2.35, 4.3);
+      let targetLookY = 1.95;
+
+      if (this.lobbyZoomMode === 'head') {
+        targetCamPos.set(0, 2.95, 2.65);
+        targetLookY = 2.62;
+      } else if (this.lobbyZoomMode === 'back') {
+        targetCamPos.set(0, 2.45, 3.85);
+        targetLookY = 2.05;
+      }
+
+      this.camera.position.lerp(targetCamPos, Math.min(1, dt * 8));
+      this.camera.lookAt(0, targetLookY, 0);
 
       if (this.previewY > 0 || this.previewJumpVel !== 0) {
         this.previewJumpVel -= 26 * dt;
@@ -959,6 +1222,8 @@ class PyramidRushGame {
           this.previewChar.squash = 0.72;
         }
       }
+
+      this.previewRotationY += (this.previewTargetRotY - this.previewRotationY) * Math.min(1, dt * 8);
       this.previewChar.root.position.y = this.previewY;
       this.previewChar.root.rotation.y = this.previewRotationY;
       this.lobbyRing.rotation.z = time * 1.2;
@@ -986,6 +1251,7 @@ class PyramidRushGame {
             isGrounded: r.isGrounded,
             crouchTimer: r.crouchTimer,
             stunTimer: r.stunTimer,
+            mummyTimer: r.mummyTimer,
             finished: r.finished
           });
         }

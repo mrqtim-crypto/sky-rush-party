@@ -473,6 +473,19 @@ export class Character3D {
       this.bodyGroup.add(ankhGroup);
       this.backDynamicParts.push(ankhGroup);
     }
+
+    // 6. MUMMY WRAP VISUAL EFFECT (Visible when hit by Mummy Bandage item!)
+    const mummyGroup = new THREE.Group();
+    const bandageMat = new THREE.MeshStandardMaterial({ color: '#f8f5e6', roughness: 0.9 });
+    for (let i = 0; i < 4; i++) {
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.36, 0.065, 8, 16), bandageMat);
+      ring.position.y = 0.4 + i * 0.16;
+      ring.rotation.x = Math.PI / 2 + (i % 2 === 0 ? 0.18 : -0.18);
+      mummyGroup.add(ring);
+    }
+    mummyGroup.visible = false;
+    this.mummyMesh = mummyGroup;
+    this.bodyGroup.add(mummyGroup);
   }
 
   updateNameTag(name) {
@@ -505,11 +518,15 @@ export class Character3D {
   }
 
   animate(dt, time, state = {}) {
-    const { speed = 10, isGrounded = true, isStunned = false, isCrouching = false } = state;
+    const { speed = 10, isGrounded = true, isStunned = false, isCrouching = false, isMummified = false } = state;
+
+    if (this.mummyMesh) {
+      this.mummyMesh.visible = !!isMummified;
+    }
 
     // Expression & Blink
     let targetExp = 'normal';
-    if (isStunned) targetExp = 'stun';
+    if (isStunned || isMummified) targetExp = 'stun';
     else if (isCrouching) targetExp = 'crouch';
     else {
       this.blinkTimer -= dt;

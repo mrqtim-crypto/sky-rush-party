@@ -26,8 +26,10 @@ export class TrackWorld {
     this.seed = 123456;
     this.rows = [];
     this.crumblingTiles = [];
-    this.traps = []; // All traps: high_fire, high_gate, low_spikes, low_log, boulder, swing_axe, divider
-    this.boostPads = [];
+    this.traps = [];
+    this.trapSwitches = []; // Floor switches that trigger traps behind the activator!
+    this.itemJars = []; // Golden Canopic Jars for PvP items
+    this.oilSlicks = []; // Player-dropped slippery oil puddles
     this.shockwaves = [];
 
     this.initSharedAssets();
@@ -37,7 +39,13 @@ export class TrackWorld {
     this.mats = {
       sandA: new THREE.MeshStandardMaterial({ color: '#e6be8a', roughness: 0.75, metalness: 0.05 }),
       sandB: new THREE.MeshStandardMaterial({ color: '#d8ad75', roughness: 0.75, metalness: 0.05 }),
-      branchLeft: new THREE.MeshStandardMaterial({ color: '#ecc878', roughness: 0.65 }),
+      goldBridge: new THREE.MeshStandardMaterial({
+        color: '#ffd166',
+        emissive: '#d97706',
+        emissiveIntensity: 0.25,
+        roughness: 0.3,
+        metalness: 0.5
+      }),
       branchRight: new THREE.MeshStandardMaterial({ color: '#cfa068', roughness: 0.75 }),
       curb: new THREE.MeshStandardMaterial({ color: '#b5834c', roughness: 0.8 }),
       dividerWall: new THREE.MeshStandardMaterial({ color: '#9c6b3b', roughness: 0.75 }),
@@ -48,7 +56,7 @@ export class TrackWorld {
         emissiveIntensity: 0.6
       }),
       quicksand: new THREE.MeshStandardMaterial({
-        color: '#c28e38',
+        color: '#b07d2b',
         emissive: '#4a3208',
         emissiveIntensity: 0.25,
         roughness: 0.9
@@ -61,8 +69,17 @@ export class TrackWorld {
       }),
       gold: new THREE.MeshStandardMaterial({
         color: '#ffd166',
-        roughness: 0.28,
+        roughness: 0.25,
         metalness: 0.65
+      }),
+      switchActive: new THREE.MeshStandardMaterial({
+        color: '#ff2a55',
+        emissive: '#ff0033',
+        emissiveIntensity: 0.85
+      }),
+      switchUsed: new THREE.MeshStandardMaterial({
+        color: '#555555',
+        roughness: 0.8
       }),
       fireBeam: new THREE.MeshStandardMaterial({
         color: '#ff5400',
@@ -83,13 +100,17 @@ export class TrackWorld {
       boulder: new THREE.MeshStandardMaterial({
         color: '#8d6346',
         roughness: 0.85
+      }),
+      oil: new THREE.MeshStandardMaterial({
+        color: '#22181c',
+        roughness: 0.08,
+        metalness: 0.6
       })
     };
 
     this.tileGeo = new THREE.BoxGeometry(LANE_WIDTH - 0.06, 0.4, ROW_LEN - 0.06);
   }
 
-  // Clean, readable single-layer path with gentle scenic curves (no disorienting tilt)
   getTrackTransform(u, h, s) {
     const gentleCurveX = Math.sin(s * 0.008) * 9.0;
     const gentleSlopeY = Math.sin(s * 0.015) * 1.2;
@@ -106,7 +127,7 @@ export class TrackWorld {
   getZoneInfo(s) {
     const ratio = s / TRACK_LENGTH;
     if (ratio < 0.20) return { name: '🏜️ 第一章：獅身人面像沙道', id: 'sphinx' };
-    if (ratio < 0.40) return { name: '🏛️ 第二章：阿努比斯雙岔迴廊 (左右支線)', id: 'anubis' };
+    if (ratio < 0.40) return { name: '🏛️ 第二章：阿努比斯雙岔迴廊 (獨木橋搶道)', id: 'anubis' };
     if (ratio < 0.60) return { name: '🔥 第三章：太陽神火焰機關室', id: 'fire' };
     if (ratio < 0.80) return { name: '🪨 第四章：法老巨石墓道 (左右支線)', id: 'boulder' };
     return { name: '👑 最終章：黃金金字塔王座廳', id: 'finale' };
@@ -121,6 +142,9 @@ export class TrackWorld {
     this.rows = [];
     this.crumblingTiles = [];
     this.traps = [];
+    this.trapSwitches = [];
+    this.itemJars = [];
+    this.oilSlicks = [];
     this.shockwaves = [];
 
     const rng = createRNG(seed);
@@ -129,45 +153,33 @@ export class TrackWorld {
       const s = r * ROW_LEN;
       const rowTiles = [];
 
-      // Determine if this row is inside a Split Branch Section (左右支線分流，之後匯合回主線)
-      // Occurs periodically for 14 rows every 46 rows
-      const branchCycle = r % 46;
-      const isBranchSection = r > 20 && r < NUM_ROWS - 20 && branchCycle >= 14 && branchCycle <= 28;
-
-      // Occasional pit gap row (not inside branch walls)
-      const isPitRow = !isBranchSection && r > 18 && r < NUM_ROWS - 12 && r % 38 === 0;
+      // Split Branch Section every 44 rows (lasts 14 rows, then merges back into main path)
+      const branchCycle = r % 44;
+      const isBranchSection = r > 18 && r < NUM_ROWS - 18 && branchCycle >= 14 && branchCycle <= 28;
+      const isPitRow = !isBranchSection && r > 16 && r < NUM_ROWS - 12 && r % 36 === 0;
 
       for (let lane = 0; lane < NUM_LANES; lane++) {
         const u = (lane - 2) * LANE_WIDTH;
 
-        // If inside a split branch section, lane 2 (center) is a stone divider wall separating Left Branch (0,1) & Right Branch (3,4)!
+        // Center divider wall in Split Branch Section
         if (isBranchSection && lane === 2) {
           const wallMesh = new THREE.Mesh(
-            new THREE.BoxGeometry(LANE_WIDTH * 0.88, 2.6, ROW_LEN),
+            new THREE.BoxGeometry(LANE_WIDTH * 0.86, 2.5, ROW_LEN),
             this.mats.dividerWall
           );
-          const tf = this.getTrackTransform(u, 1.1, s);
+          const tf = this.getTrackTransform(u, 1.05, s);
           wallMesh.position.copy(tf.position);
           wallMesh.rotation.y = tf.yaw;
           this.worldGroup.add(wallMesh);
 
-          // Add golden top trim on divider
           if (branchCycle === 14 || branchCycle === 28) {
             const statue = new THREE.Mesh(new THREE.ConeGeometry(0.9, 1.8, 4), this.mats.gold);
             statue.position.copy(tf.position);
-            statue.position.y += 2.1;
+            statue.position.y += 2.05;
             this.worldGroup.add(statue);
           }
 
-          rowTiles.push({
-            r,
-            lane,
-            u,
-            s,
-            type: 'wall',
-            state: 'intact',
-            mesh: wallMesh
-          });
+          rowTiles.push({ r, lane, u, s, type: 'wall', state: 'intact', mesh: wallMesh });
           continue;
         }
 
@@ -177,12 +189,13 @@ export class TrackWorld {
         } else if (isPitRow && (lane === 1 || lane === 3)) {
           type = 'gap';
         } else if (isBranchSection) {
-          // Left branch (lanes 0,1): High-speed Scarab route with boost pads
-          // Right branch (lanes 3,4): Steady route with quicksand/crumble
-          if (lane < 2 && branchCycle % 5 === 0 && lane === 0) {
-            type = 'boost';
-          } else if (lane > 2 && branchCycle % 6 === 0 && lane === 4) {
-            type = 'quicksand';
+          // Left Branch (lanes 0, 1): Narrow Royal Golden Bridge on lane 1 (with boost), while lane 0 is Quicksand/Pit!
+          if (lane === 1) {
+            type = branchCycle % 4 === 0 ? 'boost' : 'gold_bridge';
+          } else if (lane === 0) {
+            type = branchCycle % 3 === 0 ? 'gap' : 'quicksand';
+          } else if (lane > 2 && branchCycle % 5 === 0 && lane === 4) {
+            type = 'crumble';
           }
         } else {
           const roll = rng();
@@ -197,7 +210,7 @@ export class TrackWorld {
         }
 
         let mat = (r + lane) % 2 === 0 ? this.mats.sandA : this.mats.sandB;
-        if (isBranchSection && lane < 2) mat = this.mats.branchLeft;
+        if (type === 'gold_bridge') mat = this.mats.goldBridge;
         else if (isBranchSection && lane > 2) mat = this.mats.branchRight;
         if (type === 'crumble') mat = this.mats.crumble.clone();
         else if (type === 'quicksand') mat = this.mats.quicksand;
@@ -231,40 +244,44 @@ export class TrackWorld {
 
       this.rows.push(rowTiles);
 
-      // Decorative sandstone side curbs & periodic Pyramid Pillars / Torches
       if (r % 8 === 0) {
         this.spawnSidePillars(s);
       }
 
-      // Spawn Egyptian Traps cleanly spaced every 5-6 rows so screen stays clean & readable
+      // Spawn Golden Canopic Jars (Item Pickups) every 13 rows
+      if (r > 7 && r < NUM_ROWS - 8 && r % 13 === 0) {
+        const jarLanes = isBranchSection ? [-1 * LANE_WIDTH, 1 * LANE_WIDTH] : [-1.5 * LANE_WIDTH, 0, 1.5 * LANE_WIDTH];
+        jarLanes.forEach((ju) => this.spawnItemJar(ju, s));
+      }
+
+      // Spawn Pharaoh Trap Switches (地面陷害開關) every 11 rows!
+      if (r > 9 && r < NUM_ROWS - 10 && r % 11 === 0 && !isBranchSection) {
+        const swLane = (Math.floor(rng() * 3) - 1) * LANE_WIDTH;
+        this.spawnTrapSwitch(swLane, s);
+      }
+
+      // Spawn Egyptian Traps every 5 rows
       if (r > 10 && r < NUM_ROWS - 8 && r % 5 === 0) {
         if (isBranchSection) {
-          // Separate traps for Left Branch and Right Branch!
           if (r % 10 === 0) {
-            this.spawnBranchHighFire(s, -1.5 * LANE_WIDTH, LANE_WIDTH * 2); // Left branch: Crouch!
-            this.spawnBranchLowSpikes(s, 1.5 * LANE_WIDTH, LANE_WIDTH * 2); // Right branch: Jump!
+            this.spawnBranchHighFire(s, -1.5 * LANE_WIDTH, LANE_WIDTH * 2);
+            this.spawnBranchLowSpikes(s, 1.5 * LANE_WIDTH, LANE_WIDTH * 2);
           } else {
             this.spawnBranchLowSpikes(s, -1.5 * LANE_WIDTH, LANE_WIDTH * 2);
             this.spawnBranchHighGate(s, 1.5 * LANE_WIDTH, LANE_WIDTH * 2);
           }
         } else {
-          // Main 5-lane corridor traps
           const trapRoll = rng();
           if (trapRoll < 0.24) {
-            // 1. HIGH TRAP: Overhead Fire Beam -> MUST CROUCH (蹲下)!
             this.spawnHighFireBeam(s);
           } else if (trapRoll < 0.46) {
-            // 2. HIGH TRAP: Low Hanging Stone Gate -> MUST CROUCH (蹲下)!
             this.spawnHighStoneGate(s);
           } else if (trapRoll < 0.68) {
-            // 3. LOW TRAP: Rolling Spike Log -> MUST JUMP (跳躍)!
             this.spawnLowRollingLog(s);
           } else if (trapRoll < 0.85) {
-            // 4. LOW TRAP: Floor Spikes across 3 lanes -> JUMP or DODGE!
             const centerLane = (Math.floor(rng() * 3) - 1) * LANE_WIDTH;
             this.spawnBranchLowSpikes(s, centerLane, LANE_WIDTH * 3);
           } else {
-            // 5. LANE TRAP: Swinging Golden Axe or Giant Rolling Boulder -> LEFT/RIGHT!
             if (rng() < 0.5) {
               this.spawnSwingingAxe(s, rng() * Math.PI * 2);
             } else {
@@ -278,6 +295,95 @@ export class TrackWorld {
 
     this.buildSceneryPyramids();
     this.buildFinishPharaohGate(NUM_ROWS * ROW_LEN);
+  }
+
+  // Spawn Golden Canopic Jar (PvP Item Box)
+  spawnItemJar(u, s) {
+    const group = new THREE.Group();
+    const jarBody = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.35, 0.45, 0.85, 12),
+      this.mats.gold
+    );
+    const jarLid = new THREE.Mesh(
+      new THREE.SphereGeometry(0.36, 12, 12),
+      this.mats.scarabBoost
+    );
+    jarLid.position.y = 0.45;
+    group.add(jarBody, jarLid);
+
+    const tf = this.getTrackTransform(u, 0.65, s);
+    group.position.copy(tf.position);
+    this.worldGroup.add(group);
+
+    this.itemJars.push({
+      u,
+      s,
+      active: true,
+      respawnTimer: 0,
+      baseY: tf.position.y,
+      mesh: group
+    });
+  }
+
+  // Spawn Floor Trap Switch (踩下後在後方 5 公尺瞬間降下火焰橫樑或石門坑人！)
+  spawnTrapSwitch(u, s) {
+    const group = new THREE.Group();
+    const base = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.85, 0.95, 0.14, 16),
+      this.mats.gold
+    );
+    const button = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.68, 0.72, 0.22, 16),
+      this.mats.switchActive.clone()
+    );
+    button.position.y = 0.08;
+    group.add(base, button);
+
+    const tf = this.getTrackTransform(u, 0.06, s);
+    group.position.copy(tf.position);
+    this.worldGroup.add(group);
+
+    this.trapSwitches.push({
+      u,
+      s,
+      triggered: false,
+      cooldown: 0,
+      buttonMesh: button,
+      mesh: group
+    });
+  }
+
+  // Triggered when a player steps on a Floor Trap Switch -> spawns hazard behind them!
+  activateTrapSwitch(sw) {
+    if (sw.triggered) return false;
+    sw.triggered = true;
+    sw.cooldown = 5.0;
+    sw.buttonMesh.material = this.mats.switchUsed;
+    sw.buttonMesh.position.y = 0.01;
+
+    // Spawn an ambush Fire Beam & Rolling Log 4.8 meters behind the switch to hit chasers!
+    const ambushS = Math.max(8, sw.s - 4.8);
+    this.spawnHighFireBeam(ambushS);
+    this.spawnShockwave(sw.u, 0.2, sw.s, '#ff2a55');
+    return true;
+  }
+
+  spawnOilSlick(u, s, ownerId) {
+    const mesh = new THREE.Mesh(
+      new THREE.CylinderGeometry(1.15, 1.2, 0.08, 16),
+      this.mats.oil
+    );
+    const tf = this.getTrackTransform(u, 0.05, s);
+    mesh.position.copy(tf.position);
+    this.worldGroup.add(mesh);
+
+    this.oilSlicks.push({
+      u,
+      s,
+      ownerId,
+      active: true,
+      mesh
+    });
   }
 
   spawnSidePillars(s) {
@@ -296,7 +402,6 @@ export class TrackWorld {
     });
   }
 
-  // HIGH TRAP 1: Overhead Fire Beam (h = 1.05..2.0) -> Players MUST CROUCH (蹲下) to pass!
   spawnHighFireBeam(s) {
     this.spawnBranchHighFire(s, 0, TRACK_HALF_WIDTH * 1.9);
   }
@@ -307,7 +412,6 @@ export class TrackWorld {
     group.position.copy(tf.position);
     group.rotation.y = tf.yaw;
 
-    // Side braziers
     [-1, 1].forEach((side) => {
       const post = new THREE.Mesh(
         new THREE.BoxGeometry(0.5, 2.4, 0.5),
@@ -317,7 +421,6 @@ export class TrackWorld {
       group.add(post);
     });
 
-    // Horizontal Flame Beam at head level (y = 1.35)
     const beam = new THREE.Mesh(
       new THREE.CylinderGeometry(0.28, 0.28, width, 12),
       this.mats.fireBeam
@@ -337,7 +440,6 @@ export class TrackWorld {
     });
   }
 
-  // HIGH TRAP 2: Low Hanging Stone Gate -> Players MUST CROUCH (蹲下)!
   spawnHighStoneGate(s) {
     this.spawnBranchHighGate(s, 0, TRACK_HALF_WIDTH * 1.9);
   }
@@ -348,7 +450,6 @@ export class TrackWorld {
     group.position.copy(tf.position);
     group.rotation.y = tf.yaw;
 
-    // Hanging sandstone block leaving only 0.95m clearance underneath
     const lintel = new THREE.Mesh(
       new THREE.BoxGeometry(width, 1.6, 0.9),
       this.mats.stoneTrap
@@ -374,7 +475,6 @@ export class TrackWorld {
     });
   }
 
-  // LOW TRAP 1: Floor Spikes -> Players MUST JUMP (跳躍)!
   spawnBranchLowSpikes(s, centerU, width) {
     const group = new THREE.Group();
     const tf = this.getTrackTransform(centerU, 0, s);
@@ -407,7 +507,6 @@ export class TrackWorld {
     });
   }
 
-  // LOW TRAP 2: Low Rolling Spike Log -> Players MUST JUMP (跳躍)!
   spawnLowRollingLog(s) {
     const width = TRACK_HALF_WIDTH * 1.85;
     const group = new THREE.Group();
@@ -444,7 +543,6 @@ export class TrackWorld {
     });
   }
 
-  // LANE TRAP 1: Swinging Golden Pharaoh Axe -> Dodge Left/Right!
   spawnSwingingAxe(s, phase) {
     const pivot = new THREE.Group();
     const tf = this.getTrackTransform(0, 5.4, s);
@@ -478,7 +576,6 @@ export class TrackWorld {
     });
   }
 
-  // LANE TRAP 2: Giant Rolling Sandstone Boulder -> Dodge Left/Right!
   spawnBoulder(s, laneU) {
     const mesh = new THREE.Mesh(
       new THREE.DodecahedronGeometry(1.05, 1),
@@ -500,7 +597,6 @@ export class TrackWorld {
   }
 
   buildSceneryPyramids() {
-    // Distant monumental Great Pyramids on both sides of the desert horizon
     const pyrMat = new THREE.MeshStandardMaterial({
       color: '#d4a359',
       roughness: 0.85
@@ -597,7 +693,21 @@ export class TrackWorld {
       }
     }
 
-    // 2. Animate dynamic traps
+    // 2. Animate Golden Item Jars
+    for (const jar of this.itemJars) {
+      if (!jar.active) {
+        jar.respawnTimer -= dt;
+        if (jar.respawnTimer <= 0) {
+          jar.active = true;
+          jar.mesh.visible = true;
+        }
+      } else {
+        jar.mesh.rotation.y += dt * 2.5;
+        jar.mesh.position.y = jar.baseY + Math.sin(time * 4 + jar.s) * 0.14;
+      }
+    }
+
+    // 3. Animate dynamic traps
     for (const trap of this.traps) {
       if (trap.type === 'swing_axe') {
         const angle = Math.sin(time * trap.speed + trap.phase) * 0.88;
@@ -615,7 +725,7 @@ export class TrackWorld {
       }
     }
 
-    // 3. Shockwave rings
+    // 4. Shockwave rings
     for (let i = this.shockwaves.length - 1; i >= 0; i--) {
       const sw = this.shockwaves[i];
       sw.age += dt;

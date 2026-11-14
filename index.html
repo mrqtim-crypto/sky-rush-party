@@ -27,7 +27,7 @@
         <span class="brand-icon">🏺</span>
         <div>
           <h1>PYRAMID RUSH <span class="accent">3D</span></h1>
-          <p class="subtitle">埃及金字塔・多人Q萌機關跑酷</p>
+          <p class="subtitle">埃及金字塔・多人Q萌心機跑酷</p>
         </div>
       </div>
 
@@ -43,13 +43,13 @@
       </div>
     </header>
 
-    <!-- 3D Character Preview Touch Area -->
+    <!-- 3D Character Preview Touch Area (Upper Half of Screen) -->
     <div id="preview-touch-zone" class="preview-stage-hint">
       <div id="invite-copied-toast" class="invite-toast hidden">✅ 已複製房間連結！傳給朋友點開即可同場闖關！</div>
-      <div class="rotate-hint">👆 左右滑動旋轉Q萌角色</div>
-      <div class="stage-quick-actions">
-        <button id="btn-random-look" class="glass-pill-btn">🎲 隨機Q萌造型</button>
-        <button id="btn-pose-jump" class="glass-pill-btn">✨ 跳躍預覽</button>
+      <div class="stage-bottom-bar">
+        <span class="rotate-hint">👆 左右拖曳旋轉角色</span>
+        <button id="btn-random-look" class="glass-pill-btn">🎲 隨機造型</button>
+        <button id="btn-pose-jump" class="glass-pill-btn">✨ 跳躍動作</button>
       </div>
     </div>
 
@@ -61,7 +61,7 @@
           <input id="player-name" type="text" value="小法老" maxlength="10" />
         </div>
         <div class="rule-tip-pill">
-          ⬆️ 跳過地刺滾木 ｜ ⬇️ 蹲過火焰石門 ｜ ◀▶ 左右選支線
+          ◀▶ 左右碰撞擠人 ｜ ⬆️ 跳過地刺踩頭 ｜ ⬇️ 蹲過火樑 ｜ 🔴 踩開關陷害後人
         </div>
       </div>
 
@@ -135,27 +135,30 @@
         </div>
       </div>
 
+      <!-- Status Pill (Slipstream / Mummy Wrapped) -->
+      <div id="hud-status-pill" class="status-pill hidden">💨 尾流跟風加速中！</div>
+
+      <!-- Event Feed -->
       <div id="event-feed" class="event-feed"></div>
     </div>
 
     <div id="center-banner" class="center-banner hidden">3</div>
 
-    <!-- Bottom Touch Controls: Left/Right + Crouch + Jump + Bump -->
+    <!-- Bottom Touch Controls: Left/Right + Item + Crouch + Jump -->
     <div class="hud-controls">
-      <!-- Left: Steering Pad -->
+      <!-- Left: Steering Pad (Physical body jostling on contact!) -->
       <div id="joystick-zone" class="joystick-zone">
         <div id="joystick-base" class="joystick-base">
-          <div class="joy-arrows"><span>◀ 左移</span><span>右移 ▶</span></div>
+          <div class="joy-arrows"><span>◀ 左擠</span><span>右擠 ▶</span></div>
           <div id="joystick-knob" class="joystick-knob"></div>
         </div>
       </div>
 
-      <!-- Right: Crouch (⬇️), Jump (⬆️), Bump (💥) -->
+      <!-- Right: Item (🏺), Crouch (⬇️), Jump (⬆️) -->
       <div class="action-buttons">
-        <button id="btn-bump" class="act-btn bump-btn">
-          <span class="act-icon">💥</span>
-          <span class="act-text">推擠</span>
-          <div id="bump-cd-fill" class="cd-overlay"></div>
+        <button id="btn-use-item" class="act-btn item-btn disabled">
+          <span id="item-icon" class="act-icon">🏺</span>
+          <span id="item-label" class="act-text">無寶壺道具</span>
         </button>
 
         <div class="lower-action-row">
@@ -166,14 +169,14 @@
 
           <button id="btn-jump" class="act-btn jump-btn">
             <span class="act-icon">⬆️</span>
-            <span class="act-text">跳躍</span>
+            <span class="act-text">跳躍/踩頭</span>
           </button>
         </div>
       </div>
     </div>
 
     <div class="kb-hint">
-      💻 鍵盤：<kbd>A</kbd><kbd>D</kbd> 或 <kbd>◀</kbd><kbd>▶</kbd> 左右移動 ｜ <kbd>W</kbd>/<kbd>Space</kbd>/<kbd>▲</kbd> 跳躍 ｜ <kbd>S</kbd>/<kbd>▼</kbd> 蹲下 ｜ <kbd>Shift</kbd> 推擠
+      💻 鍵盤：<kbd>A</kbd><kbd>D</kbd> 或 <kbd>◀</kbd><kbd>▶</kbd> 左右移動與貼身擠人 ｜ <kbd>W</kbd>/<kbd>Space</kbd>/<kbd>▲</kbd> 跳躍 ｜ <kbd>S</kbd>/<kbd>▼</kbd> 蹲下 ｜ <kbd>E</kbd> 使用寶壺道具
     </div>
   </div>
 
@@ -182,7 +185,7 @@
     <div class="result-card">
       <div class="result-badge" id="result-trophy">🏆</div>
       <h2 id="result-title">成功抵達法老黃金寶庫！</h2>
-      <p id="result-subtitle" class="result-stats-line">通關時間: 03:20 ｜ 推擠對手: 3 次</p>
+      <p id="result-subtitle" class="result-stats-line">通關時間: 03:20 ｜ 陷害與擠飛對手: 5 次</p>
 
       <div class="leaderboard-list" id="leaderboard-list"></div>
 
