@@ -553,7 +553,7 @@ html, body {
 /* CTA Start Row: Side-by-Side Solo & Multiplayer Start */
 .lobby-cta-row {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   flex-shrink: 0;
 }
 
@@ -562,14 +562,20 @@ html, body {
   background: linear-gradient(135deg, #ef4444, #ea580c);
   color: #fff;
   border: 2px solid #fca5a5;
-  padding: 10px 12px;
+  padding: 10px 6px;
   border-radius: 12px;
-  font-size: 0.9rem;
+  font-size: 0.8rem;
   font-weight: 900;
   cursor: pointer;
   box-shadow: 0 5px 16px rgba(239, 68, 68, 0.45);
   transition: transform 0.1s;
   white-space: nowrap;
+}
+
+.start-game-btn.solo-pure-btn {
+  background: linear-gradient(135deg, #0284c7, #2563eb);
+  border-color: #7dd3fc;
+  box-shadow: 0 5px 16px rgba(37, 99, 235, 0.45);
 }
 
 .start-game-btn.solo-instant-btn {

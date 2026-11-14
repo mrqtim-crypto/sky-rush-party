@@ -431,7 +431,14 @@ export class AbyssWorld {
     canvas.height = 64;
     const ctx = canvas.getContext('2d');
     ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
-    ctx.roundRect(6, 6, 180, 52, 12);
+    ctx.beginPath();
+    const rx = 6, ry = 6, rw = 180, rh = 52, rr = 12;
+    ctx.moveTo(rx + rr, ry);
+    ctx.arcTo(rx + rw, ry, rx + rw, ry + rh, rr);
+    ctx.arcTo(rx + rw, ry + rh, rx, ry + rh, rr);
+    ctx.arcTo(rx, ry + rh, rx, ry, rr);
+    ctx.arcTo(rx, ry, rx + rw, ry, rr);
+    ctx.closePath();
     ctx.fill();
     ctx.lineWidth = 3;
     ctx.strokeStyle = '#38bdf8';

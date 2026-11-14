@@ -1,14 +1,14 @@
 import * as THREE from 'three';
-import { sfx } from './audio.js';
+import { sfx } from './audio.js?v=20261114_4';
 import {
   CUSTOMIZATION_CATALOG,
   CharacterAvatar,
   ITEM_META,
   getRandomAppearance,
   getRandomNickname
-} from './character.js';
-import { AbyssWorld, FLOOR_VERTICAL_GAP } from './world.js';
-import { RoomNetwork } from './network.js';
+} from './character.js?v=20261114_4';
+import { AbyssWorld, FLOOR_VERTICAL_GAP } from './world.js?v=20261114_4';
+import { RoomNetwork } from './network.js?v=20261114_4';
 
 // ================= STATE & CONFIG =================
 const canvas = document.getElementById('game-canvas');
@@ -87,6 +87,7 @@ world.root.visible = false;
 // Game State
 let gameState = 'lobby'; // 'lobby' | 'playing' | 'result'
 let isSoloSession = false;
+let lastSoloWithBots = true;
 let cameraCloseMode = false;
 let matchParticipants = [];
 const players = new Map();
@@ -116,7 +117,6 @@ function updateCameraProjection() {
       const rect = stageEl.getBoundingClientRect();
       const stageCenterY = rect.top + rect.height * 0.54;
       const screenCenterY = h * 0.5;
-      // Shift projection center upward so (0, 1.0, 0) renders squarely inside #preview-touch-zone!
       const offsetY = screenCenterY - stageCenterY;
       camera.setViewOffset(w, h, 0, offsetY, w, h);
     } else {
@@ -143,6 +143,7 @@ function renderCustomizationUI() {
     el.innerHTML = '';
     list.forEach((item) => {
       const btn = document.createElement('button');
+      btn.type = 'button';
       btn.className = 'cust-pill' + (myAppearance[currentKey] === item.id ? ' active' : '');
       btn.textContent = item.label;
       btn.addEventListener('click', () => {
@@ -167,6 +168,7 @@ function renderCustomizationUI() {
     colorRow.innerHTML = '';
     CUSTOMIZATION_CATALOG.hairColors.forEach((c) => {
       const dot = document.createElement('button');
+      dot.type = 'button';
       dot.className = 'color-dot-btn' + (myAppearance.hairColor === c.id ? ' active' : '');
       dot.style.backgroundColor = c.id;
       dot.title = c.label;
@@ -200,82 +202,6 @@ function renderCustomizationUI() {
   document.getElementById('bottom-override-hint').textContent = hintText;
 }
 
-function refreshAvatarAndSync() {
-  renderCustomizationUI();
-  const cleanName = (nameInput.value || '下樓梯小霸王').trim().slice(0, 10) || '下樓梯小霸王';
-  lobbyAvatar.updateAppearance(myAppearance, cleanName);
-  const stageTag = document.getElementById('stage-name-preview');
-  if (stageTag) stageTag.textContent = `👑 ${cleanName}`;
-  saveProfileLocally();
-  network.updateMyProfile({
-    name: cleanName,
-    appearance: myAppearance
-  });
-}
-
-// Lobby Tab Switching
-document.querySelectorAll('.lobby-tab').forEach((tabBtn) => {
-  tabBtn.addEventListener('click', () => {
-    sfx.customizePop();
-    document.querySelectorAll('.lobby-tab').forEach((b) => b.classList.remove('active'));
-    document.querySelectorAll('.tab-panel').forEach((p) => p.classList.remove('active'));
-    tabBtn.classList.add('active');
-    const target = document.getElementById(tabBtn.dataset.tab);
-    if (target) target.classList.add('active');
-    updateCameraProjection();
-  });
-});
-
-// Sound Mute Toggle
-const soundBtn = document.getElementById('btn-sound-toggle');
-soundBtn.addEventListener('click', () => {
-  const on = sfx.toggleMute();
-  soundBtn.textContent = on ? '🔊' : '🔇';
-});
-
-// Randomize Buttons
-document.getElementById('btn-random-all').addEventListener('click', () => {
-  sfx.itemPickup();
-  nameInput.value = getRandomNickname();
-  myAppearance = getRandomAppearance(true);
-  refreshAvatarAndSync();
-});
-
-document.getElementById('btn-random-outfit').addEventListener('click', () => {
-  sfx.customizePop();
-  myAppearance = getRandomAppearance(true);
-  refreshAvatarAndSync();
-});
-
-document.getElementById('btn-random-name').addEventListener('click', () => {
-  sfx.customizePop();
-  nameInput.value = getRandomNickname();
-  refreshAvatarAndSync();
-});
-
-nameInput.addEventListener('input', () => {
-  refreshAvatarAndSync();
-});
-
-// Drag to rotate 3D preview character in Lobby
-const previewZone = document.getElementById('preview-touch-zone');
-let isDraggingPreview = false;
-let lastPreviewX = 0;
-previewZone.addEventListener('pointerdown', (e) => {
-  if (e.target.closest('button')) return;
-  isDraggingPreview = true;
-  lastPreviewX = e.clientX;
-});
-window.addEventListener('pointermove', (e) => {
-  if (!isDraggingPreview) return;
-  const dx = e.clientX - lastPreviewX;
-  lastPreviewX = e.clientX;
-  lobbyAvatar.group.rotation.y += dx * 0.016;
-});
-window.addEventListener('pointerup', () => {
-  isDraggingPreview = false;
-});
-
 // ================= NETWORK & ROOM SETUP =================
 const onlineStatusEl = document.getElementById('online-status');
 const roomInput = document.getElementById('room-input');
@@ -289,6 +215,7 @@ const btnHostStart = document.getElementById('btn-host-start');
 
 function showToast(msg) {
   const t = document.getElementById('global-toast');
+  if (!t) return;
   t.textContent = msg;
   t.classList.remove('hidden');
   clearTimeout(showToast._timer);
@@ -297,12 +224,13 @@ function showToast(msg) {
 
 const network = new RoomNetwork({
   onStatus: (text) => {
-    onlineStatusEl.textContent = text;
+    if (onlineStatusEl) onlineStatusEl.textContent = text;
   },
   onAuthFailed: (msg) => {
     showToast(msg);
   },
   onRosterUpdate: (playersArr, roomConfig, isHost, myId) => {
+    if (!rosterListEl) return;
     rosterListEl.innerHTML = '';
     let readyCount = 0;
     playersArr.forEach((p) => {
@@ -314,15 +242,15 @@ const network = new RoomNetwork({
       rosterListEl.appendChild(chip);
     });
 
-    readyCounterEl.textContent = `準備 ${readyCount}/${playersArr.length}`;
-    tabPlayerBadge.textContent = `${playersArr.length}人`;
+    if (readyCounterEl) readyCounterEl.textContent = `準備 ${readyCount}/${playersArr.length}`;
+    if (tabPlayerBadge) tabPlayerBadge.textContent = `${playersArr.length}人`;
 
     if (isHost) {
-      btnHostStart.classList.remove('hidden');
-      btnGuestReady.classList.add('hidden');
+      btnHostStart?.classList.remove('hidden');
+      btnGuestReady?.classList.add('hidden');
     } else {
-      btnHostStart.classList.add('hidden');
-      btnGuestReady.classList.remove('hidden');
+      btnHostStart?.classList.add('hidden');
+      btnGuestReady?.classList.remove('hidden');
     }
   },
   onMatchStart: (payload) => {
@@ -373,9 +301,88 @@ const network = new RoomNetwork({
   }
 });
 
+function refreshAvatarAndSync() {
+  renderCustomizationUI();
+  const cleanName = (nameInput.value || '下樓梯小霸王').trim().slice(0, 10) || '下樓梯小霸王';
+  lobbyAvatar.updateAppearance(myAppearance, cleanName);
+  const stageTag = document.getElementById('stage-name-preview');
+  if (stageTag) stageTag.textContent = `👑 ${cleanName}`;
+  saveProfileLocally();
+  network.updateMyProfile({
+    name: cleanName,
+    appearance: myAppearance
+  });
+}
+
+// Lobby Tab Switching
+document.querySelectorAll('.lobby-tab').forEach((tabBtn) => {
+  tabBtn.addEventListener('click', () => {
+    sfx.customizePop();
+    document.querySelectorAll('.lobby-tab').forEach((b) => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach((p) => p.classList.remove('active'));
+    tabBtn.classList.add('active');
+    const target = document.getElementById(tabBtn.dataset.tab);
+    if (target) target.classList.add('active');
+    updateCameraProjection();
+  });
+});
+
+// Sound Mute Toggle
+const soundBtn = document.getElementById('btn-sound-toggle');
+soundBtn?.addEventListener('click', () => {
+  const on = sfx.toggleMute();
+  soundBtn.textContent = on ? '🔊' : '🔇';
+});
+
+// Randomize Buttons
+document.getElementById('btn-random-all')?.addEventListener('click', () => {
+  sfx.itemPickup();
+  nameInput.value = getRandomNickname();
+  myAppearance = getRandomAppearance(true);
+  refreshAvatarAndSync();
+});
+
+document.getElementById('btn-random-outfit')?.addEventListener('click', () => {
+  sfx.customizePop();
+  myAppearance = getRandomAppearance(true);
+  refreshAvatarAndSync();
+});
+
+document.getElementById('btn-random-name')?.addEventListener('click', () => {
+  sfx.customizePop();
+  nameInput.value = getRandomNickname();
+  refreshAvatarAndSync();
+});
+
+nameInput?.addEventListener('input', () => {
+  refreshAvatarAndSync();
+});
+
+// Drag to rotate 3D preview character in Lobby
+const previewZone = document.getElementById('preview-touch-zone');
+let isDraggingPreview = false;
+let lastPreviewX = 0;
+previewZone?.addEventListener('pointerdown', (e) => {
+  if (e.target.closest('button')) return;
+  isDraggingPreview = true;
+  lastPreviewX = e.clientX;
+});
+window.addEventListener('pointermove', (e) => {
+  if (!isDraggingPreview) return;
+  const dx = e.clientX - lastPreviewX;
+  lastPreviewX = e.clientX;
+  lobbyAvatar.group.rotation.y += dx * 0.016;
+});
+window.addEventListener('pointerup', () => {
+  isDraggingPreview = false;
+});
+
 const urlParams = new URLSearchParams(window.location.search);
 if (urlParams.get('room')) {
   roomInput.value = urlParams.get('room').toUpperCase().slice(0, 8);
+} else {
+  // Unique default room per session so solo players never collide on B100!
+  roomInput.value = 'B' + Math.floor(100 + Math.random() * 899);
 }
 if (urlParams.get('pwd')) {
   roomPwdInput.value = urlParams.get('pwd').slice(0, 8);
@@ -393,7 +400,7 @@ network.joinOrCreateRoom({
   fillBots: chkFillBots.checked
 });
 
-document.getElementById('btn-join-room').addEventListener('click', () => {
+document.getElementById('btn-join-room')?.addEventListener('click', () => {
   sfx.readyBeep(true);
   network.joinOrCreateRoom({
     roomId: roomInput.value,
@@ -417,10 +424,10 @@ function copyRoomInviteLink() {
   showToast('🔗 已複製專屬邀請連結！傳給朋友點開直接進房！');
 }
 
-document.getElementById('btn-share-link').addEventListener('click', copyRoomInviteLink);
-document.getElementById('btn-top-share').addEventListener('click', copyRoomInviteLink);
+document.getElementById('btn-share-link')?.addEventListener('click', copyRoomInviteLink);
+document.getElementById('btn-top-share')?.addEventListener('click', copyRoomInviteLink);
 
-btnGuestReady.addEventListener('click', () => {
+btnGuestReady?.addEventListener('click', () => {
   const nextReady = !network.myReady;
   sfx.readyBeep(nextReady);
   network.updateMyProfile({ ready: nextReady });
@@ -428,19 +435,23 @@ btnGuestReady.addEventListener('click', () => {
 });
 
 // ================= INSTANT SOLO PLAY & MULTIPLAYER START =================
-function startSoloMatchNow() {
+function startSoloMatchNow(withBots = true) {
   isSoloSession = true;
+  lastSoloWithBots = Boolean(withBots);
+  chkFillBots.checked = lastSoloWithBots;
+
   const cleanName = (nameInput.value || '下樓梯小霸王').trim().slice(0, 10) || '下樓梯小霸王';
+  const myLocalId = network.myId || 'local_hero';
   const list = [
     {
-      id: network.myId,
+      id: myLocalId,
       name: cleanName,
       appearance: { ...myAppearance },
       isBot: false
     }
   ];
 
-  if (chkFillBots.checked) {
+  if (lastSoloWithBots) {
     for (let i = 1; i <= 5; i++) {
       list.push({
         id: `bot_${i}`,
@@ -457,17 +468,27 @@ function startSoloMatchNow() {
   });
 }
 
-document.getElementById('btn-solo-start').addEventListener('click', startSoloMatchNow);
+window.startSoloMatchNow = startSoloMatchNow;
 
-document.getElementById('btn-hud-restart').addEventListener('click', () => {
+// 1-Player Pure Solo Button (0 Bots, pure personal floor challenge)
+document.getElementById('btn-solo-pure')?.addEventListener('click', () => {
+  startSoloMatchNow(false);
+});
+
+// 1-Player + 5 AI Bots Party Button
+document.getElementById('btn-solo-start')?.addEventListener('click', () => {
+  startSoloMatchNow(true);
+});
+
+document.getElementById('btn-hud-restart')?.addEventListener('click', () => {
   if (isSoloSession || network.roomPlayers.size <= 1) {
-    startSoloMatchNow();
+    startSoloMatchNow(lastSoloWithBots);
   } else if (network.isHost) {
     btnHostStart.click();
   }
 });
 
-document.getElementById('btn-ghost-finish-now').addEventListener('click', () => {
+document.getElementById('btn-ghost-finish-now')?.addEventListener('click', () => {
   let topSurvivor = null;
   players.forEach((p) => {
     if (!p.isGhost && (!topSurvivor || p.maxFloor > topSurvivor.maxFloor)) {
@@ -477,9 +498,9 @@ document.getElementById('btn-ghost-finish-now').addEventListener('click', () => 
   finishMatch(topSurvivor || localPlayer);
 });
 
-document.getElementById('btn-play-again-instant').addEventListener('click', () => {
+document.getElementById('btn-play-again-instant')?.addEventListener('click', () => {
   if (isSoloSession || network.roomPlayers.size <= 1) {
-    startSoloMatchNow();
+    startSoloMatchNow(lastSoloWithBots);
   } else if (network.isHost) {
     btnHostStart.click();
   } else {
@@ -487,13 +508,13 @@ document.getElementById('btn-play-again-instant').addEventListener('click', () =
   }
 });
 
-btnHostStart.addEventListener('click', () => {
-  if (!network.isHost) {
-    // If guest clicks or still connecting, start solo immediately!
-    startSoloMatchNow();
+btnHostStart?.addEventListener('click', () => {
+  if (!network.isHost || network.roomPlayers.size <= 1) {
+    // If playing alone in room, immediately start according to AI checkbox!
+    startSoloMatchNow(chkFillBots.checked);
     return;
   }
-  isSoloSession = network.roomPlayers.size <= 1;
+  isSoloSession = false;
   const humanPlayers = Array.from(network.roomPlayers.values()).map((p) => ({
     id: p.id,
     name: p.name,
@@ -543,6 +564,7 @@ function addEventFeed(text) {
 
 function showCenterBanner(text, duration = 1800) {
   const banner = document.getElementById('center-banner');
+  if (!banner) return;
   banner.textContent = text;
   banner.classList.remove('hidden');
   clearTimeout(showCenterBanner._t);
@@ -550,9 +572,11 @@ function showCenterBanner(text, duration = 1800) {
 }
 
 function startMatchFromPayload(payload) {
-  sfx.countdown(true);
-  sfx.startBgm();
-  sfx.setBgmIntensity(1.0);
+  try {
+    sfx.countdown(true);
+    sfx.startBgm();
+    sfx.setBgmIntensity(1.0);
+  } catch (e) {}
 
   gameState = 'playing';
   floorCombo = 0;
@@ -568,7 +592,7 @@ function startMatchFromPayload(payload) {
   const total = matchParticipants.length;
 
   matchParticipants.forEach((part, idx) => {
-    const isMe = part.id === network.myId;
+    const isMe = idx === 0 && isSoloSession ? true : part.id === network.myId;
     const avatar = new CharacterAvatar({
       id: part.id,
       name: part.name,
@@ -626,6 +650,7 @@ function startMatchFromPayload(payload) {
 
   if (!localPlayer && players.size > 0) {
     localPlayer = players.values().next().value;
+    localPlayer.isLocal = true;
   }
 
   updateHudUI();
@@ -641,52 +666,58 @@ function startMatchFromPayload(payload) {
 function updateHudUI() {
   if (!localPlayer) return;
   const floorEl = document.getElementById('hud-floor');
-  floorEl.textContent = `🌊 地下 B${String(localPlayer.maxFloor).padStart(3, '0')} 層`;
+  if (floorEl) floorEl.textContent = `🌊 地下 B${String(localPlayer.maxFloor).padStart(3, '0')} 層`;
 
   const comboEl = document.getElementById('hud-combo-badge');
-  if (floorCombo >= 2 && !localPlayer.isGhost) {
-    comboEl.textContent = `🔥 極速連下 x${floorCombo}`;
-    comboEl.classList.remove('hidden');
-  } else {
-    comboEl.classList.add('hidden');
+  if (comboEl) {
+    if (floorCombo >= 2 && !localPlayer.isGhost) {
+      comboEl.textContent = `🔥 極速連下 x${floorCombo}`;
+      comboEl.classList.remove('hidden');
+    } else {
+      comboEl.classList.add('hidden');
+    }
   }
 
   const hpText = document.getElementById('hud-hp-text');
-  hpText.textContent = localPlayer.isGhost ? '👻 背後靈' : `❤️ ${localPlayer.hp}/12`;
+  if (hpText) hpText.textContent = localPlayer.isGhost ? '👻 背後靈' : `❤️ ${localPlayer.hp}/12`;
 
   const segWrap = document.getElementById('hud-hp-segments');
-  segWrap.innerHTML = '';
-  for (let i = 0; i < 12; i++) {
-    const seg = document.createElement('div');
-    let cls = 'hp-seg';
-    if (!localPlayer.isGhost && i < localPlayer.hp) {
-      cls += ' filled';
-      if (localPlayer.hp <= 4) cls += ' danger';
-      else if (localPlayer.hp <= 7) cls += ' warn';
+  if (segWrap) {
+    segWrap.innerHTML = '';
+    for (let i = 0; i < 12; i++) {
+      const seg = document.createElement('div');
+      let cls = 'hp-seg';
+      if (!localPlayer.isGhost && i < localPlayer.hp) {
+        cls += ' filled';
+        if (localPlayer.hp <= 4) cls += ' danger';
+        else if (localPlayer.hp <= 7) cls += ' warn';
+      }
+      seg.className = cls;
+      segWrap.appendChild(seg);
     }
-    seg.className = cls;
-    segWrap.appendChild(seg);
   }
 
   let aliveCount = 0;
   players.forEach((p) => {
     if (!p.isGhost) aliveCount++;
   });
-  document.getElementById('hud-alive-count').textContent =
-    players.size === 1 ? '⚡ 單人挑戰' : `👑 存活: ${aliveCount}/${players.size}`;
+  const aliveEl = document.getElementById('hud-alive-count');
+  if (aliveEl) {
+    aliveEl.textContent = players.size === 1 ? '⚡ 單人挑戰' : `👑 存活: ${aliveCount}/${players.size}`;
+  }
 
   const aliveCluster = document.getElementById('alive-actions');
   const ghostCluster = document.getElementById('ghost-actions');
   const ghostBanner = document.getElementById('ghost-mode-banner');
 
   if (localPlayer.isGhost) {
-    aliveCluster.classList.add('hidden');
-    ghostCluster.classList.remove('hidden');
-    ghostBanner.classList.remove('hidden');
+    aliveCluster?.classList.add('hidden');
+    ghostCluster?.classList.remove('hidden');
+    ghostBanner?.classList.remove('hidden');
   } else {
-    aliveCluster.classList.remove('hidden');
-    ghostCluster.classList.add('hidden');
-    ghostBanner.classList.add('hidden');
+    aliveCluster?.classList.remove('hidden');
+    ghostCluster?.classList.add('hidden');
+    ghostBanner?.classList.add('hidden');
   }
 }
 
@@ -695,6 +726,7 @@ function updateItemButtonUI() {
   const iconEl = document.getElementById('item-btn-icon');
   const nameEl = document.getElementById('item-btn-name');
   const subEl = document.getElementById('item-btn-sub');
+  if (!btn || !iconEl || !nameEl || !subEl) return;
 
   if (!localPlayer || !localPlayer.heldItem) {
     btn.classList.add('empty');
@@ -865,26 +897,27 @@ function handleIncomingAction(playerId, action, payload) {
 function activateFieldSwitch(actor, switchType) {
   sfx.switchTrigger();
   const pill = document.getElementById('hud-field-event');
-  pill.classList.remove('hidden');
+  if (pill) {
+    pill.classList.remove('hidden');
+    if (switchType === 'speed_up') {
+      world.speedBoostTimer = 5.5;
+      pill.textContent = '⚡ 全場極速下墜中！';
+      addEventFeed(`⚡ ${actor.name} 踩下全場加速開關！`);
+    } else if (switchType === 'reverse_belt') {
+      world.conveyorReversed = !world.conveyorReversed;
+      pill.textContent = '🔄 輸送帶方向大逆轉！';
+      addEventFeed(`🔄 ${actor.name} 逆轉了所有輸送帶方向！`);
+    } else if (switchType === 'rockfall') {
+      world.triggerRockfall(world.ceilingY);
+      pill.textContent = '☄️ 警告：天降熔岩落石！';
+      addEventFeed(`☄️ ${actor.name} 啟動了天降落石機關！`);
+    }
 
-  if (switchType === 'speed_up') {
-    world.speedBoostTimer = 5.5;
-    pill.textContent = '⚡ 全場極速下墜中！';
-    addEventFeed(`⚡ ${actor.name} 踩下全場加速開關！`);
-  } else if (switchType === 'reverse_belt') {
-    world.conveyorReversed = !world.conveyorReversed;
-    pill.textContent = '🔄 輸送帶方向大逆轉！';
-    addEventFeed(`🔄 ${actor.name} 逆轉了所有輸送帶方向！`);
-  } else if (switchType === 'rockfall') {
-    world.triggerRockfall(world.ceilingY);
-    pill.textContent = '☄️ 警告：天降熔岩落石！';
-    addEventFeed(`☄️ ${actor.name} 啟動了天降落石機關！`);
+    clearTimeout(activateFieldSwitch._t);
+    activateFieldSwitch._t = setTimeout(() => {
+      pill.classList.add('hidden');
+    }, 5000);
   }
-
-  clearTimeout(activateFieldSwitch._t);
-  activateFieldSwitch._t = setTimeout(() => {
-    pill.classList.add('hidden');
-  }, 5000);
 }
 
 // ================= MOBILE FLOATING JOYSTICK & MULTI-TOUCH =================
@@ -896,7 +929,7 @@ let joyCenterX = 0;
 let joyCenterY = 0;
 const maxJoyRadius = 42;
 
-joyZone.addEventListener('pointerdown', (e) => {
+joyZone?.addEventListener('pointerdown', (e) => {
   if (activeJoyPointerId !== null) return;
   activeJoyPointerId = e.pointerId;
   joyZone.setPointerCapture(e.pointerId);
@@ -914,7 +947,7 @@ joyZone.addEventListener('pointerdown', (e) => {
   joyY = 0;
 });
 
-joyZone.addEventListener('pointermove', (e) => {
+joyZone?.addEventListener('pointermove', (e) => {
   if (e.pointerId !== activeJoyPointerId) return;
   const dx = e.clientX - joyCenterX;
   const dy = e.clientY - joyCenterY;
@@ -939,16 +972,16 @@ function releaseJoystick(e) {
   joyBase.style.left = `14px`;
   joyBase.style.bottom = `22px`;
 }
-joyZone.addEventListener('pointerup', releaseJoystick);
-joyZone.addEventListener('pointercancel', releaseJoystick);
+joyZone?.addEventListener('pointerup', releaseJoystick);
+joyZone?.addEventListener('pointercancel', releaseJoystick);
 
 // Right-side Multi-Touch Action Buttons
-document.getElementById('btn-jump').addEventListener('pointerdown', (e) => {
+document.getElementById('btn-jump')?.addEventListener('pointerdown', (e) => {
   e.preventDefault();
   if (localPlayer) performJump(localPlayer);
 });
 
-document.getElementById('btn-shove').addEventListener('pointerdown', (e) => {
+document.getElementById('btn-shove')?.addEventListener('pointerdown', (e) => {
   e.preventDefault();
   if (!localPlayer || localPlayer.isGhost || shoveCooldown > 0) return;
   shoveCooldown = 1.05;
@@ -956,7 +989,7 @@ document.getElementById('btn-shove').addEventListener('pointerdown', (e) => {
   network.sendAction('shove', {});
 });
 
-document.getElementById('btn-use-item').addEventListener('pointerdown', (e) => {
+document.getElementById('btn-use-item')?.addEventListener('pointerdown', (e) => {
   e.preventDefault();
   if (localPlayer && localPlayer.heldItem) {
     useHeldItem(localPlayer);
@@ -964,7 +997,7 @@ document.getElementById('btn-use-item').addEventListener('pointerdown', (e) => {
 });
 
 // Ghost Revenge Buttons
-document.getElementById('btn-ghost-curse').addEventListener('pointerdown', (e) => {
+document.getElementById('btn-ghost-curse')?.addEventListener('pointerdown', (e) => {
   e.preventDefault();
   if (!localPlayer || !localPlayer.isGhost || ghostCurseCooldown > 0) return;
   let bestKey = null;
@@ -988,7 +1021,7 @@ document.getElementById('btn-ghost-curse').addEventListener('pointerdown', (e) =
   }
 });
 
-document.getElementById('btn-ghost-rock').addEventListener('pointerdown', (e) => {
+document.getElementById('btn-ghost-rock')?.addEventListener('pointerdown', (e) => {
   e.preventDefault();
   if (!localPlayer || !localPlayer.isGhost || ghostRockCooldown > 0) return;
   ghostRockCooldown = 5.5;
@@ -998,7 +1031,7 @@ document.getElementById('btn-ghost-rock').addEventListener('pointerdown', (e) =>
   network.sendAction('ghost_rock', {});
 });
 
-document.getElementById('btn-ghost-dash').addEventListener('pointerdown', (e) => {
+document.getElementById('btn-ghost-dash')?.addEventListener('pointerdown', (e) => {
   e.preventDefault();
   if (!localPlayer || !localPlayer.isGhost) return;
   const survivors = [];
@@ -1014,7 +1047,7 @@ document.getElementById('btn-ghost-dash').addEventListener('pointerdown', (e) =>
   }
 });
 
-document.getElementById('btn-cam-mode').addEventListener('click', (e) => {
+document.getElementById('btn-cam-mode')?.addEventListener('click', (e) => {
   cameraCloseMode = !cameraCloseMode;
   e.currentTarget.textContent = cameraCloseMode ? '🎥 近距' : '🎥 視角';
 });
@@ -1144,7 +1177,7 @@ function finishMatch(winner) {
   switchScreen('result-screen');
 }
 
-document.getElementById('btn-back-lobby').addEventListener('click', () => {
+document.getElementById('btn-back-lobby')?.addEventListener('click', () => {
   sfx.stopBgm();
   sfx.customizePop();
   gameState = 'lobby';
@@ -1269,7 +1302,6 @@ function updatePlayerPhysics(p, dt) {
     mz = 0;
   }
 
-  // Fast, snappy arcade movement!
   let currentPlat = world.platforms.get(p.currentPlatformKey);
   const onIce = p.isGrounded && currentPlat && currentPlat.type === 'ice';
   const moveSpeed = 8.8;
@@ -1292,7 +1324,6 @@ function updatePlayerPhysics(p, dt) {
     }
   }
 
-  // Crisp fast gravity
   const prevY = p.y;
   p.vy -= 31.5 * dt;
   p.vy = Math.max(-23.5, p.vy);
@@ -1554,11 +1585,9 @@ function animate(now) {
       lobbyAvatar.group.rotation.y += dt * 0.6;
     }
     lobbyAvatar.animate(dt, false, true);
-    // Position camera so the character + pedestal sits cleanly inside the top showcase window!
     camera.position.set(0, 1.15, 3.65);
     camera.lookAt(0, 0.98, 0);
   } else if (gameState === 'playing') {
-    // Combo decay
     if (floorComboTimer > 0) {
       floorComboTimer -= dt;
       if (floorComboTimer <= 0) {
@@ -1567,7 +1596,6 @@ function animate(now) {
       }
     }
 
-    // Dynamic BGM tempo scales with depth & speed boost!
     const depthFactor = localPlayer ? 1.0 + Math.min(0.55, localPlayer.maxFloor * 0.012) : 1.0;
     const boostFactor = world.speedBoostTimer > 0 ? 1.25 : 1.0;
     sfx.setBgmIntensity(depthFactor * boostFactor);
@@ -1602,12 +1630,13 @@ function animate(now) {
     if (localPlayer && !localPlayer.isGhost) {
       const ceilDist = Math.max(0, world.ceilingY - (localPlayer.y + 1.6));
       const warnEl = document.getElementById('hud-ceiling-warn');
-      warnEl.textContent = ceilDist < 3.5
-        ? `🚨 小心頭頂尖刺！(${ceilDist.toFixed(1)}m)`
-        : `⚙️ 尖刺距離 ${ceilDist.toFixed(1)}m`;
+      if (warnEl) {
+        warnEl.textContent = ceilDist < 3.5
+          ? `🚨 小心頭頂尖刺！(${ceilDist.toFixed(1)}m)`
+          : `⚙️ 尖刺距離 ${ceilDist.toFixed(1)}m`;
+      }
     }
 
-    // Fast-tracking 3D Party Camera + Screen Shake
     if (localPlayer) {
       const targetCamX = localPlayer.x * 0.38;
       const targetCamY = cameraCloseMode ? localPlayer.y + 2.8 : localPlayer.y + 3.4;

@@ -7,12 +7,12 @@ export class RoomNetwork {
   constructor(callbacks = {}) {
     this.callbacks = callbacks;
     this.peer = null;
-    this.isHost = false;
+    this.isHost = true; // Default to Host immediately so solo play never waits for PeerJS
     this.roomId = 'B100';
     this.password = '';
     this.myId = 'p_' + Math.random().toString(36).substring(2, 9);
     this.myName = '下樓梯小霸王';
-    this.myReady = false;
+    this.myReady = true;
     this.myAppearance = {
       gender: 'male',
       hair: 'spiky',
@@ -30,9 +30,14 @@ export class RoomNetwork {
     this.guestConns = new Map();
     this.roomPlayers = new Map();
     this.hostConn = null;
+    this.guestTimeout = null;
   }
 
   cleanup() {
+    if (this.guestTimeout) {
+      clearTimeout(this.guestTimeout);
+      this.guestTimeout = null;
+    }
     if (this.hostConn) {
       try { this.hostConn.close(); } catch (e) {}
       this.hostConn = null;
@@ -57,21 +62,29 @@ export class RoomNetwork {
     if (appearance) {
       this.myAppearance = { ...this.myAppearance, ...appearance };
     }
-    this.myReady = false;
+    this.isHost = true;
+    this.myReady = true;
     this.roomConfig.fillBots = fillBots !== undefined ? fillBots : true;
     this.roomConfig.hasPassword = Boolean(this.password);
 
+    // Immediately populate local roster so Solo/Host buttons work at 0ms!
+    this.setupLocalHostRoster();
+
     if (!window.Peer) {
-      this.isHost = true;
-      this.setupLocalHostRoster();
-      this.emitStatus('🟡 單機派對模式', 'offline');
+      this.emitStatus('🟢 單人/派對就緒', 'online');
       return;
     }
 
-    this.emitStatus(`🔄 正在連線房號 ${this.roomId}...`, 'connecting');
+    this.emitStatus(`🟢 房號 ${this.roomId} 就緒`, 'online');
     const hostPeerId = `${PEER_PREFIX}${this.roomId.toLowerCase()}`;
 
-    const peer = new window.Peer(hostPeerId, { debug: 0 });
+    let peer;
+    try {
+      peer = new window.Peer(hostPeerId, { debug: 0 });
+    } catch (e) {
+      this.emitStatus(`🟢 單機模式 (${this.roomId})`, 'online');
+      return;
+    }
     this.peer = peer;
 
     peer.on('open', (id) => {
@@ -102,12 +115,12 @@ export class RoomNetwork {
     });
 
     peer.on('error', (err) => {
-      if (err.type === 'unavailable-id') {
+      if (err && err.type === 'unavailable-id') {
         this.connectAsGuest(hostPeerId);
       } else {
         this.isHost = true;
         this.setupLocalHostRoster();
-        this.emitStatus(`🟡 單機派對 (房號 ${this.roomId})`, 'offline');
+        this.emitStatus(`🟢 單人/派對就緒 (${this.roomId})`, 'online');
       }
     });
   }
@@ -128,10 +141,25 @@ export class RoomNetwork {
     if (this.peer) {
       try { this.peer.destroy(); } catch (e) {}
     }
-    this.isHost = false;
-    this.myReady = false;
-    const guestPeer = new window.Peer({ debug: 0 });
+
+    let guestPeer;
+    try {
+      guestPeer = new window.Peer({ debug: 0 });
+    } catch (e) {
+      this.isHost = true;
+      this.setupLocalHostRoster();
+      return;
+    }
     this.peer = guestPeer;
+
+    // Fallback timeout: if host doesn't answer within 3s (stale room ID), stay Host so solo works!
+    this.guestTimeout = setTimeout(() => {
+      if (!this.hostConn || !this.hostConn.open) {
+        this.isHost = true;
+        this.setupLocalHostRoster();
+        this.emitStatus(`🟢 單人/房主就緒 (${this.roomId})`, 'online');
+      }
+    }, 3000);
 
     guestPeer.on('open', (myGuestId) => {
       this.myId = myGuestId;
@@ -139,6 +167,12 @@ export class RoomNetwork {
       this.hostConn = conn;
 
       conn.on('open', () => {
+        if (this.guestTimeout) {
+          clearTimeout(this.guestTimeout);
+          this.guestTimeout = null;
+        }
+        this.isHost = false;
+        this.myReady = true;
         conn.send({
           type: 'hello',
           id: this.myId,
@@ -154,14 +188,20 @@ export class RoomNetwork {
       });
 
       conn.on('close', () => {
-        this.emitStatus('🟡 與房主連線中斷', 'offline');
+        this.isHost = true;
+        this.setupLocalHostRoster();
+        this.emitStatus('🟢 已切回單人房主模式', 'online');
       });
     });
 
     guestPeer.on('error', () => {
+      if (this.guestTimeout) {
+        clearTimeout(this.guestTimeout);
+        this.guestTimeout = null;
+      }
       this.isHost = true;
       this.setupLocalHostRoster();
-      this.emitStatus(`🟡 單機模式 (${this.roomId})`, 'offline');
+      this.emitStatus(`🟢 單人模式 (${this.roomId})`, 'online');
     });
   }
 
@@ -279,6 +319,8 @@ export class RoomNetwork {
         me.name = this.myName;
         me.appearance = { ...this.myAppearance };
         me.ready = true;
+      } else {
+        this.setupLocalHostRoster();
       }
       this.updateHostStatusText();
       this.broadcastRosterFromHost();
@@ -322,18 +364,18 @@ export class RoomNetwork {
   }
 
   hostStartMatch(fullParticipantsList) {
-    if (!this.isHost) return null;
     const seed = Math.floor(Math.random() * 900000) + 100000;
-
     const payload = {
       seed,
       participants: fullParticipantsList
     };
 
-    this.broadcastFromHost({
-      type: 'match_start',
-      payload
-    });
+    if (this.isHost) {
+      this.broadcastFromHost({
+        type: 'match_start',
+        payload
+      });
+    }
 
     if (this.callbacks.onMatchStart) {
       this.callbacks.onMatchStart(payload);

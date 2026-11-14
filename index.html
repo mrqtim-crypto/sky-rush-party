@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="mobile-web-app-capable" content="yes" />
   <title>小朋友下樓梯 3D：深淵大亂鬥｜單人極速＆多人連線派對</title>
-  <link rel="stylesheet" href="./styles.css" />
+  <link rel="stylesheet" href="./styles.css?v=20261114_4" />
   <!-- PeerJS for Serverless WebRTC P2P Multiplayer on GitHub Pages -->
   <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
   <!-- Three.js via jsDelivr CDN -->
@@ -151,16 +151,19 @@
         </div>
       </div>
 
-      <!-- Pinned CTA Row: Instant Solo Play + Room Multiplayer Start -->
+      <!-- Pinned CTA Row: Instant 1P Solo, 1P+AI Party, and Room Start -->
       <div class="lobby-cta-row">
-        <button id="btn-solo-start" class="start-game-btn solo-instant-btn">
-          ⚡ 單人立即開玩
+        <button id="btn-solo-pure" class="start-game-btn solo-pure-btn" type="button">
+          ⚡ 單人挑戰(1人)
         </button>
-        <button id="btn-guest-ready" class="start-game-btn ready-toggle-btn hidden">
+        <button id="btn-solo-start" class="start-game-btn solo-instant-btn" type="button">
+          🤖 單人+AI亂鬥
+        </button>
+        <button id="btn-guest-ready" class="start-game-btn ready-toggle-btn hidden" type="button">
           ✅ 準備完成
         </button>
-        <button id="btn-host-start" class="start-game-btn room-start-btn">
-          🚀 房間多人開局
+        <button id="btn-host-start" class="start-game-btn room-start-btn" type="button">
+          🚀 房間開局
         </button>
       </div>
     </section>
@@ -193,8 +196,8 @@
         <div class="right-status-col">
           <span class="count-pill alive" id="hud-alive-count">👑 存活: 6</span>
           <div class="hud-mini-btns">
-            <button id="btn-cam-mode" class="cam-toggle-btn">🎥 視角</button>
-            <button id="btn-hud-restart" class="cam-toggle-btn restart-mini-btn" title="立即重開一局">🔄 重來</button>
+            <button id="btn-cam-mode" class="cam-toggle-btn" type="button">🎥 視角</button>
+            <button id="btn-hud-restart" class="cam-toggle-btn restart-mini-btn" type="button" title="立即重開一局">🔄 重來</button>
           </div>
         </div>
       </div>
@@ -209,7 +212,7 @@
     <!-- Ghost Mode Status Banner + Instant Finish Button for Solo Players -->
     <div id="ghost-mode-banner" class="ghost-banner hidden">
       <span>👻 你已變成「背後靈」！用右下技能害人，或</span>
-      <button id="btn-ghost-finish-now" class="ghost-finish-btn">🏁 立即結算重玩</button>
+      <button id="btn-ghost-finish-now" class="ghost-finish-btn" type="button">🏁 立即結算重玩</button>
     </div>
 
     <!-- ================= BOTTOM MOBILE-OPTIMIZED TOUCH CONTROLS ================= -->
@@ -228,7 +231,7 @@
         <!-- ALIVE PLAYER ACTIONS -->
         <div id="alive-actions" class="action-cluster">
           <!-- Item Slot Button -->
-          <button id="btn-use-item" class="item-slot-btn empty" disabled>
+          <button id="btn-use-item" class="item-slot-btn empty" type="button" disabled>
             <span id="item-btn-icon" class="item-icon">🎁</span>
             <div class="item-txt">
               <strong id="item-btn-name">無道具</strong>
@@ -238,14 +241,14 @@
 
           <div class="primary-btn-row">
             <!-- Shove / Elbow Push Button -->
-            <button id="btn-shove" class="round-act-btn shove-btn">
+            <button id="btn-shove" class="round-act-btn shove-btn" type="button">
               <span class="act-emoji">🥊</span>
               <span class="act-label">推人</span>
               <small id="shove-cd-text">就緒</small>
             </button>
 
             <!-- Giant Jump / Head-Stomp Button -->
-            <button id="btn-jump" class="round-act-btn jump-main-btn">
+            <button id="btn-jump" class="round-act-btn jump-main-btn" type="button">
               <span class="act-emoji">⬆️</span>
               <span class="act-label">跳躍/踩頭</span>
             </button>
@@ -254,7 +257,7 @@
 
         <!-- GHOST REVENGE ACTIONS (Shown when eliminated) -->
         <div id="ghost-actions" class="action-cluster ghost-cluster hidden">
-          <button id="btn-ghost-curse" class="ghost-skill-btn curse-btn">
+          <button id="btn-ghost-curse" class="ghost-skill-btn curse-btn" type="button">
             <span class="act-emoji">💥</span>
             <div>
               <strong>詛咒最近踏板</strong>
@@ -263,13 +266,13 @@
           </button>
 
           <div class="primary-btn-row">
-            <button id="btn-ghost-rock" class="round-act-btn rock-btn">
+            <button id="btn-ghost-rock" class="round-act-btn rock-btn" type="button">
               <span class="act-emoji">☄️</span>
               <span class="act-label">召喚落石</span>
               <small id="rock-cd-text">就緒</small>
             </button>
 
-            <button id="btn-ghost-dash" class="round-act-btn ghost-up-btn">
+            <button id="btn-ghost-dash" class="round-act-btn ghost-up-btn" type="button">
               <span class="act-emoji">👻</span>
               <span class="act-label">閃現追人</span>
             </button>
@@ -289,12 +292,12 @@
       <div class="leaderboard-list" id="leaderboard-list"></div>
 
       <div class="result-actions">
-        <button id="btn-play-again-instant" class="start-game-btn solo-instant-btn">⚡ 立即再戰一局</button>
-        <button id="btn-back-lobby" class="start-game-btn secondary-lobby-btn">🎭 返回大廳換裝</button>
+        <button id="btn-play-again-instant" class="start-game-btn solo-instant-btn" type="button">⚡ 立即再戰一局</button>
+        <button id="btn-back-lobby" class="start-game-btn secondary-lobby-btn" type="button">🎭 返回大廳換裝</button>
       </div>
     </div>
   </div>
 
-  <script type="module" src="./js/main.js"></script>
+  <script type="module" src="./js/main.js?v=20261114_4"></script>
 </body>
 </html>

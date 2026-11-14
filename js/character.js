@@ -877,7 +877,13 @@ export class CharacterAvatar {
       ? 'rgba(15, 23, 42, 0.88)'
       : 'rgba(15, 23, 42, 0.72)';
     ctx.beginPath();
-    ctx.roundRect(18, 8, 220, 74, 16);
+    const rx = 18, ry = 8, rw = 220, rh = 74, rr = 16;
+    ctx.moveTo(rx + rr, ry);
+    ctx.arcTo(rx + rw, ry, rx + rw, ry + rh, rr);
+    ctx.arcTo(rx + rw, ry + rh, rx, ry + rh, rr);
+    ctx.arcTo(rx, ry + rh, rx, ry, rr);
+    ctx.arcTo(rx, ry, rx + rw, ry, rr);
+    ctx.closePath();
     ctx.fill();
 
     ctx.lineWidth = 3;
