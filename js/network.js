@@ -1,38 +1,34 @@
 // Serverless WebRTC P2P Multiplayer Room Manager (via PeerJS)
-// Supports Room Password Lock, One-Click Invite Link, Ready Check, and Host Match Start with Random Hunter
+// For NS-Shaft 3D Party (小朋友下樓梯 3D：深淵大亂鬥)
 
-const PEER_PREFIX = 'tw-chameleon-hide3d-';
+const PEER_PREFIX = 'ns-shaft-party3d-';
 
 export class RoomNetwork {
   constructor(callbacks = {}) {
     this.callbacks = callbacks;
-    // Callbacks:
-    // onStatus(text, stateType)
-    // onAuthFailed(message)
-    // onRosterUpdate(playersArray, roomConfig, isHost, myId)
-    // onMatchStart(matchConfig)
-    // onRemoteState(playerId, state)
-    // onRemoteAction(playerId, action, payload)
-
     this.peer = null;
     this.isHost = false;
-    this.roomId = 'TW101';
+    this.roomId = 'B100';
     this.password = '';
     this.myId = 'p_' + Math.random().toString(36).substring(2, 9);
-    this.myName = '變色龍玩家';
+    this.myName = '下樓梯小霸王';
     this.myReady = false;
+    this.myAppearance = {
+      gender: 'male',
+      hair: 'spiky',
+      hairColor: '#1e293b',
+      top: 'classic_tee',
+      bottom: 'jeans',
+      suit: 'none'
+    };
 
     this.roomConfig = {
-      mapId: 'taipei101',
       fillBots: true,
       hasPassword: false
     };
 
-    // Host state
-    this.guestConns = new Map(); // peerId -> DataConnection
-    this.roomPlayers = new Map(); // peerId -> { id, name, isHost, ready }
-
-    // Guest state
+    this.guestConns = new Map();
+    this.roomPlayers = new Map();
     this.hostConn = null;
   }
 
@@ -53,37 +49,38 @@ export class RoomNetwork {
     }
   }
 
-  joinOrCreateRoom({ roomId, password = '', playerName = '變色龍玩家', mapId = 'taipei101', fillBots = true }) {
+  joinOrCreateRoom({ roomId, password = '', playerName = '下樓梯小霸王', appearance = null, fillBots = true }) {
     this.cleanup();
-    this.roomId = (roomId || 'TW101').trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8) || 'TW101';
+    this.roomId = (roomId || 'B100').trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8) || 'B100';
     this.password = (password || '').trim();
-    this.myName = (playerName || '變色龍玩家').trim().slice(0, 12) || '變色龍玩家';
+    this.myName = (playerName || '下樓梯小霸王').trim().slice(0, 12) || '下樓梯小霸王';
+    if (appearance) {
+      this.myAppearance = { ...this.myAppearance, ...appearance };
+    }
     this.myReady = false;
-    this.roomConfig.mapId = mapId || 'taipei101';
     this.roomConfig.fillBots = fillBots !== undefined ? fillBots : true;
     this.roomConfig.hasPassword = Boolean(this.password);
 
     if (!window.Peer) {
       this.isHost = true;
       this.setupLocalHostRoster();
-      this.emitStatus('🟡 單機派對模式 (PeerJS 未載入)', 'offline');
+      this.emitStatus('🟡 單機派對模式', 'offline');
       return;
     }
 
-    this.emitStatus(`🔄 正在連線房間 ${this.roomId}...`, 'connecting');
+    this.emitStatus(`🔄 正在連線房號 ${this.roomId}...`, 'connecting');
     const hostPeerId = `${PEER_PREFIX}${this.roomId.toLowerCase()}`;
 
     const peer = new window.Peer(hostPeerId, { debug: 0 });
     this.peer = peer;
 
     peer.on('open', (id) => {
-      // Successfully claimed the Room Host ID!
       this.isHost = true;
       this.myId = id;
-      this.myReady = true; // Host is ready by default
+      this.myReady = true;
       this.setupLocalHostRoster();
       const lockIcon = this.password ? '🔒' : '🔓';
-      this.emitStatus(`🟢 ${lockIcon} 房號 ${this.roomId} (你是房主・1人)`, 'online');
+      this.emitStatus(`🟢 ${lockIcon} 房號 ${this.roomId} (房主・1人)`, 'online');
     });
 
     peer.on('connection', (conn) => {
@@ -106,12 +103,11 @@ export class RoomNetwork {
 
     peer.on('error', (err) => {
       if (err.type === 'unavailable-id') {
-        // Room already exists -> Connect as Guest!
         this.connectAsGuest(hostPeerId);
       } else {
         this.isHost = true;
         this.setupLocalHostRoster();
-        this.emitStatus(`🟡 離線模式 (房號 ${this.roomId})`, 'offline');
+        this.emitStatus(`🟡 單機派對 (房號 ${this.roomId})`, 'offline');
       }
     });
   }
@@ -121,6 +117,7 @@ export class RoomNetwork {
     this.roomPlayers.set(this.myId, {
       id: this.myId,
       name: this.myName,
+      appearance: { ...this.myAppearance },
       isHost: true,
       ready: true
     });
@@ -146,6 +143,7 @@ export class RoomNetwork {
           type: 'hello',
           id: this.myId,
           name: this.myName,
+          appearance: this.myAppearance,
           password: this.password,
           ready: this.myReady
         });
@@ -156,7 +154,7 @@ export class RoomNetwork {
       });
 
       conn.on('close', () => {
-        this.emitStatus(`🟡 與房主連線中斷`, 'offline');
+        this.emitStatus('🟡 與房主連線中斷', 'offline');
       });
     });
 
@@ -171,11 +169,10 @@ export class RoomNetwork {
     if (!msg || typeof msg !== 'object') return;
 
     if (msg.type === 'hello') {
-      // Verify Room Password if locked by Host
       if (this.password && (msg.password || '').trim() !== this.password) {
         conn.send({
           type: 'auth_failed',
-          message: `🔒 房號 ${this.roomId} 需要密碼，或您輸入的密碼不正確！`
+          message: `🔒 房號 ${this.roomId} 密碼不正確！`
         });
         setTimeout(() => {
           try { conn.close(); } catch (e) {}
@@ -187,6 +184,7 @@ export class RoomNetwork {
       this.roomPlayers.set(conn.peer, {
         id: conn.peer,
         name: (msg.name || '連線玩家').slice(0, 12),
+        appearance: msg.appearance || { ...this.myAppearance },
         isHost: false,
         ready: Boolean(msg.ready)
       });
@@ -197,6 +195,7 @@ export class RoomNetwork {
       const p = this.roomPlayers.get(conn.peer);
       if (p) {
         if (msg.name !== undefined) p.name = (msg.name || '連線玩家').slice(0, 12);
+        if (msg.appearance !== undefined) p.appearance = { ...p.appearance, ...msg.appearance };
         if (msg.ready !== undefined) p.ready = Boolean(msg.ready);
         this.broadcastRosterFromHost();
       }
@@ -239,7 +238,7 @@ export class RoomNetwork {
         this.roomConfig = { ...this.roomConfig, ...msg.roomConfig };
       }
       const lockIcon = this.roomConfig.hasPassword ? '🔒' : '🔓';
-      this.emitStatus(`🟢 ${lockIcon} 房號 ${this.roomId} (已連線・${this.roomPlayers.size}人)`, 'online');
+      this.emitStatus(`🟢 ${lockIcon} 房號 ${this.roomId} (${this.roomPlayers.size}人連線)`, 'online');
       this.emitRosterUpdate();
     } else if (msg.type === 'match_start') {
       if (this.callbacks.onMatchStart) {
@@ -256,9 +255,12 @@ export class RoomNetwork {
     }
   }
 
-  updateMyProfile({ name, ready, password, mapId, fillBots }) {
+  updateMyProfile({ name, appearance, ready, password, fillBots }) {
     if (name !== undefined) {
-      this.myName = name.trim().slice(0, 12) || '變色龍玩家';
+      this.myName = name.trim().slice(0, 12) || '下樓梯小霸王';
+    }
+    if (appearance !== undefined) {
+      this.myAppearance = { ...this.myAppearance, ...appearance };
     }
     if (ready !== undefined) {
       this.myReady = Boolean(ready);
@@ -269,15 +271,13 @@ export class RoomNetwork {
         this.password = password.trim();
         this.roomConfig.hasPassword = Boolean(this.password);
       }
-      if (mapId !== undefined) {
-        this.roomConfig.mapId = mapId;
-      }
       if (fillBots !== undefined) {
         this.roomConfig.fillBots = Boolean(fillBots);
       }
       const me = this.roomPlayers.get(this.myId);
       if (me) {
         me.name = this.myName;
+        me.appearance = { ...this.myAppearance };
         me.ready = true;
       }
       this.updateHostStatusText();
@@ -286,6 +286,7 @@ export class RoomNetwork {
       this.hostConn.send({
         type: 'update_profile',
         name: this.myName,
+        appearance: this.myAppearance,
         ready: this.myReady
       });
     }
@@ -295,7 +296,7 @@ export class RoomNetwork {
     if (!this.isHost) return;
     const lockIcon = this.password ? '🔒' : '🔓';
     const count = this.roomPlayers.size;
-    this.emitStatus(`🟢 ${lockIcon} 房號 ${this.roomId} (房主・${count}人連線)`, 'online');
+    this.emitStatus(`🟢 ${lockIcon} 房號 ${this.roomId} (房主・${count}人)`, 'online');
   }
 
   broadcastRosterFromHost() {
@@ -320,20 +321,12 @@ export class RoomNetwork {
     }
   }
 
-  // Host triggers Match Start and randomly picks Hunter(s)
   hostStartMatch(fullParticipantsList) {
     if (!this.isHost) return null;
     const seed = Math.floor(Math.random() * 900000) + 100000;
 
-    // Randomly pick 1 Hunter (or 2 if >= 7 total participants)
-    const shuffled = [...fullParticipantsList].sort(() => Math.random() - 0.5);
-    const hunterCount = fullParticipantsList.length >= 7 ? 2 : 1;
-    const initialHunterIds = shuffled.slice(0, hunterCount).map((p) => p.id);
-
     const payload = {
       seed,
-      mapId: this.roomConfig.mapId,
-      initialHunterIds,
       participants: fullParticipantsList
     };
 

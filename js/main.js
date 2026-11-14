@@ -1,1480 +1,1534 @@
 import * as THREE from 'three';
 import { sfx } from './audio.js';
+import {
+  CUSTOMIZATION_CATALOG,
+  CharacterAvatar,
+  ITEM_META,
+  getRandomAppearance,
+  getRandomNickname
+} from './character.js';
+import { AbyssWorld, FLOOR_VERTICAL_GAP } from './world.js';
 import { RoomNetwork } from './network.js';
-import { ChameleonAvatar, POSE_LIST } from './character.js';
-import { LandmarkWorld } from './world.js';
 
-const HIDE_PHASE_SECONDS = 90;  // 90 秒躲藏準備期
-const HUNT_PHASE_SECONDS = 270; // 4 分 30 秒 (270秒) 追捕倒數
+// ================= STATE & CONFIG =================
+const canvas = document.getElementById('game-canvas');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 
-const BOT_NAMES = ['信義小籠包', '珍奶半糖少冰', '國父練舞哥', '藍白拖戰神', '大安森林鴿', '夜市臭豆腐'];
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x090d16);
+scene.fog = new THREE.FogExp2(0x090d16, 0.018);
 
-class TaiwanChameleonGame {
-  constructor() {
-    this.canvas = document.getElementById('game-canvas');
-    this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    this.renderer.setSize(window.innerWidth, window.innerHeight);
-    this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+const camera = new THREE.PerspectiveCamera(54, window.innerWidth / window.innerHeight, 0.1, 140);
 
-    this.scene = new THREE.Scene();
-    this.camera = new THREE.PerspectiveCamera(58, window.innerWidth / window.innerHeight, 0.1, 160);
+// Lighting
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.78);
+scene.add(ambientLight);
 
-    // Lighting
-    const hemi = new THREE.HemisphereLight(0xe0f2fe, 0x1e293b, 0.95);
-    this.scene.add(hemi);
+const dirLight = new THREE.DirectionalLight(0xfffbeb, 1.15);
+dirLight.position.set(8, 22, 14);
+scene.add(dirLight);
 
-    const dirLight = new THREE.DirectionalLight(0xfffbeb, 1.15);
-    dirLight.position.set(18, 32, 22);
-    dirLight.castShadow = true;
-    dirLight.shadow.mapSize.set(1024, 1024);
-    dirLight.shadow.camera.near = 2;
-    dirLight.shadow.camera.far = 90;
-    const d = 32;
-    dirLight.shadow.camera.left = -d;
-    dirLight.shadow.camera.right = d;
-    dirLight.shadow.camera.top = d;
-    dirLight.shadow.camera.bottom = -d;
-    this.scene.add(dirLight);
+const rimLight = new THREE.DirectionalLight(0x38bdf8, 0.55);
+rimLight.position.set(-10, -10, -8);
+scene.add(rimLight);
 
-    this.world = new LandmarkWorld(this.scene);
+// Lobby Preview Stage Group
+const lobbyStageGroup = new THREE.Group();
+scene.add(lobbyStageGroup);
 
-    // Game State
-    this.screenState = 'lobby'; // 'lobby' | 'playing' | 'result'
-    this.phase = 'hide';        // 'hide' (90s) | 'hunt' (270s)
-    this.phaseTimer = HIDE_PHASE_SECONDS;
-    this.selectedMap = 'taipei101';
-    this.fillBots = true;
+const pedestalGeo = new THREE.CylinderGeometry(1.35, 1.55, 0.28, 32);
+const pedestalMat = new THREE.MeshStandardMaterial({
+  color: 0x1e293b,
+  metalness: 0.4,
+  roughness: 0.3
+});
+const pedestalMesh = new THREE.Mesh(pedestalGeo, pedestalMat);
+pedestalMesh.position.y = -0.14;
+lobbyStageGroup.add(pedestalMesh);
 
-    // Local Player State
-    this.myAvatar = new ChameleonAvatar('百變小龍', 'chameleon');
-    this.scene.add(this.myAvatar.root);
-    this.myPos = new THREE.Vector3(0, 0, 6);
-    this.myVelY = 0;
-    this.myRotY = 0;
-    this.isGrounded = true;
-    this.isPositionLocked = false;
-    this.myScore = 0;
-    this.bobaCharges = 2;
-    this.bobaSpeedTimer = 0;
-    this.tauntCooldown = 0;
-    this.autoTauntTimer = 30;
+const pedestalRing = new THREE.Mesh(
+  new THREE.TorusGeometry(1.42, 0.06, 12, 36),
+  new THREE.MeshBasicMaterial({ color: 0x38bdf8 })
+);
+pedestalRing.rotation.x = Math.PI / 2;
+pedestalRing.position.y = 0.01;
+lobbyStageGroup.add(pedestalRing);
 
-    // Hunter Attack & Penalty Cooldowns
-    this.attackCooldown = 0;
-    this.penaltyTimer = 0; // 4.0s stun when hitting a real scene prop!
-    this.radarCooldown = 0;
+// Load or create saved appearance & nickname
+let myAppearance = getRandomAppearance(false);
+try {
+  const saved = localStorage.getItem('ns_shaft_appearance_v1');
+  if (saved) myAppearance = { ...myAppearance, ...JSON.parse(saved) };
+} catch (e) {}
 
-    // Camera Orbit State
-    this.camYaw = 0;
-    this.camPitch = 0.38;
-    this.camDist = 5.6;
+const nameInput = document.getElementById('player-name');
+try {
+  const savedName = localStorage.getItem('ns_shaft_name_v1');
+  if (savedName) nameInput.value = savedName;
+} catch (e) {}
 
-    // Input State
-    this.joyVec = { x: 0, y: 0 };
-    this.keys = {};
+const lobbyAvatar = new CharacterAvatar({
+  id: 'preview_me',
+  name: nameInput.value || '下樓梯小霸王',
+  isLocal: true,
+  appearance: myAppearance
+});
+lobbyAvatar.dropRing.visible = false;
+lobbyStageGroup.add(lobbyAvatar.group);
 
-    // Other Participants (Remote Players + AI Bots)
-    this.otherPlayers = new Map(); // id -> { id, name, isBot, avatar, x, y, z, rotY, role, score, botTarget, botStateTimer }
-    this.smokeClouds = [];
+// Abyss World
+const world = new AbyssWorld(scene);
+world.root.visible = false;
 
-    this.setupNetwork();
-    this.setupUI();
-    this.setupControls();
-    this.parseUrlInviteParams();
+// Game State
+let gameState = 'lobby'; // 'lobby' | 'playing' | 'result'
+let cameraCloseMode = false;
+let matchParticipants = [];
+const players = new Map(); // id -> playerRuntimeObj
+let localPlayer = null;
+let netSyncAccumulator = 0;
 
-    // Build initial lobby background map
-    this.world.buildMap(this.selectedMap, 10101);
-    this.positionAvatarForLobby();
+// Cooldowns & Input
+let shoveCooldown = 0;
+let ghostCurseCooldown = 0;
+let ghostRockCooldown = 0;
+let joyX = 0;
+let joyY = 0;
+const keys = {};
 
-    window.addEventListener('resize', () => this.onResize());
-    this.lastTime = performance.now();
-    requestAnimationFrame((t) => this.animate(t));
-  }
+// ================= CUSTOMIZATION UI SETUP =================
+function saveProfileLocally() {
+  try {
+    localStorage.setItem('ns_shaft_appearance_v1', JSON.stringify(myAppearance));
+    localStorage.setItem('ns_shaft_name_v1', nameInput.value.trim() || '下樓梯小霸王');
+  } catch (e) {}
+}
 
-  setupNetwork() {
-    this.net = new RoomNetwork({
-      onStatus: (text) => {
-        const el = document.getElementById('online-status');
-        if (el) el.textContent = text;
-      },
-      onAuthFailed: (msg) => {
-        this.showToast(msg, true);
-      },
-      onRosterUpdate: (players, roomConfig, isHost, myId) => {
-        this.renderLobbyRoster(players, roomConfig, isHost, myId);
-      },
-      onMatchStart: (payload) => {
-        this.startMatchFromHostPayload(payload);
-      },
-      onRemoteState: (playerId, state) => {
-        this.applyRemotePlayerState(playerId, state);
-      },
-      onRemoteAction: (playerId, action, payload) => {
-        this.handleRemoteAction(playerId, action, payload);
-      }
-    });
-  }
-
-  parseUrlInviteParams() {
-    const params = new URLSearchParams(window.location.search);
-    const urlRoom = params.get('room');
-    const urlPwd = params.get('pwd');
-
-    const roomInput = document.getElementById('room-input');
-    const pwdInput = document.getElementById('room-pwd-input');
-    const nameInput = document.getElementById('player-name');
-
-    if (urlRoom && roomInput) {
-      roomInput.value = urlRoom.toUpperCase().slice(0, 8);
-    }
-    if (urlPwd && pwdInput) {
-      pwdInput.value = urlPwd.slice(0, 8);
-    }
-
-    // Randomize default nickname suffix slightly so multiple tabs have distinct names
-    if (nameInput && nameInput.value === '百變小龍') {
-      const suffixes = ['王', '哥', '俠', '星', '仔', '寶'];
-      nameInput.value = '變色龍' + suffixes[Math.floor(Math.random() * suffixes.length)] + Math.floor(Math.random() * 90 + 10);
-    }
-
-    this.connectToCurrentRoomInputs();
-  }
-
-  connectToCurrentRoomInputs() {
-    const roomId = document.getElementById('room-input')?.value || 'TW101';
-    const password = document.getElementById('room-pwd-input')?.value || '';
-    const playerName = document.getElementById('player-name')?.value || '變色龍玩家';
-
-    this.myAvatar.name = playerName;
-    this.net.joinOrCreateRoom({
-      roomId,
-      password,
-      playerName,
-      mapId: this.selectedMap,
-      fillBots: this.fillBots
-    });
-  }
-
-  setupUI() {
-    // Lobby Preview Pose Buttons
-    document.querySelectorAll('[data-preview-pose]').forEach((btn) => {
+function renderCustomizationUI() {
+  const bindPills = (containerId, list, currentKey, onSelect) => {
+    const el = document.getElementById(containerId);
+    if (!el) return;
+    el.innerHTML = '';
+    list.forEach((item) => {
+      const btn = document.createElement('button');
+      btn.className = 'cust-pill' + (myAppearance[currentKey] === item.id ? ' active' : '');
+      btn.textContent = item.label;
       btn.addEventListener('click', () => {
-        sfx.poseChange();
-        document.querySelectorAll('[data-preview-pose]').forEach((b) => b.classList.remove('active'));
-        btn.classList.add('active');
-        const pose = btn.getAttribute('data-preview-pose');
-        this.myAvatar.applyPose(pose);
-        if (pose === 'cone') {
-          this.myAvatar.setAllParts([
-            { color: '#ea580c', roughness: 0.4 },
-            { color: '#ea580c', roughness: 0.4 },
-            { color: '#f8fafc', roughness: 0.3 },
-            { color: '#ea580c', roughness: 0.4 },
-            { color: '#ea580c', roughness: 0.4 },
-            { color: '#1e293b', roughness: 0.8 }
-          ]);
-        } else if (pose === 'ball') {
-          this.myAvatar.setSingleColor('#eab308', 0.25, 0.7);
-        } else if (pose === 'box') {
-          this.myAvatar.setAllParts([
-            { color: '#0284c7', roughness: 0.4 },
-            { color: '#16a34a', roughness: 0.4 },
-            { color: '#16a34a', roughness: 0.4 },
-            { color: '#16a34a', roughness: 0.4 },
-            { color: '#334155', roughness: 0.7 },
-            { color: '#334155', roughness: 0.7 }
-          ]);
-        } else if (pose === 'guard') {
-          this.myAvatar.setAllParts([
-            { color: '#e2e8f0', roughness: 0.2 },
-            { color: '#1d4ed8', roughness: 0.4 },
-            { color: '#1d4ed8', roughness: 0.4 },
-            { color: '#1d4ed8', roughness: 0.4 },
-            { color: '#1d4ed8', roughness: 0.4 },
-            { color: '#991b1b', roughness: 0.6 }
-          ]);
-        } else {
-          this.myAvatar.resetToPureWhite();
-        }
+        sfx.customizePop();
+        onSelect(item.id);
+        refreshAvatarAndSync();
       });
+      el.appendChild(btn);
     });
+  };
 
-    // Join / Update Room Button
-    document.getElementById('btn-join-room')?.addEventListener('click', () => {
-      sfx.readyBeep(true);
-      this.connectToCurrentRoomInputs();
-    });
+  bindPills('opt-gender', CUSTOMIZATION_CATALOG.genders, 'gender', (val) => {
+    myAppearance.gender = val;
+  });
 
-    // Player Name & Password live update
-    document.getElementById('player-name')?.addEventListener('change', (e) => {
-      this.net.updateMyProfile({ name: e.target.value });
-    });
-    document.getElementById('room-pwd-input')?.addEventListener('change', (e) => {
-      if (this.net.isHost) {
-        this.net.updateMyProfile({ password: e.target.value });
-        this.showToast(e.target.value ? `🔒 已設定房間密碼：${e.target.value}` : '🔓 已取消房間密碼');
-      }
-    });
+  bindPills('opt-hair', CUSTOMIZATION_CATALOG.hairs, 'hair', (val) => {
+    myAppearance.hair = val;
+  });
 
-    // One-Click Share Invite Link (with Room ID & Password)
-    document.getElementById('btn-share-link')?.addEventListener('click', async () => {
-      sfx.paintBlend();
-      const roomId = (document.getElementById('room-input')?.value || 'TW101').trim().toUpperCase();
-      const pwd = (document.getElementById('room-pwd-input')?.value || '').trim();
-
-      // Update room password on host if not yet synced
-      if (this.net.isHost && pwd !== this.net.password) {
-        this.net.updateMyProfile({ password: pwd });
-      }
-
-      const baseUrl = `${window.location.origin}${window.location.pathname}`;
-      const params = new URLSearchParams();
-      params.set('room', roomId);
-      if (pwd) params.set('pwd', pwd);
-      const shareUrl = `${baseUrl}?${params.toString()}`;
-      const shareText = `🦎 來玩《台灣變色龍：地標大躲貓貓》！房號：${roomId}${pwd ? `（密碼：${pwd}）` : ''} 點連結直接進房：`;
-
-      try {
-        await navigator.clipboard.writeText(`${shareText} ${shareUrl}`);
-        this.showToast('✅ 已複製專屬房間連結！傳給朋友點開即可進房！');
-      } catch (e) {
-        this.showToast(`🔗 分享網址：${shareUrl}`);
-      }
-
-      if (navigator.share) {
-        try {
-          await navigator.share({
-            title: '台灣變色龍：地標大躲貓貓 3D',
-            text: shareText,
-            url: shareUrl
-          });
-        } catch (err) {}
-      }
-    });
-
-    // Map Selector Cards
-    document.querySelectorAll('.map-card').forEach((card) => {
-      card.addEventListener('click', () => {
-        if (!this.net.isHost) {
-          this.showToast('👑 只有房主可以切換地圖場景喔！', true);
-          return;
-        }
-        sfx.colorPick();
-        const mapId = card.getAttribute('data-map') || 'taipei101';
-        this.selectedMap = mapId;
-        document.querySelectorAll('.map-card').forEach((c) => c.classList.remove('active'));
-        card.classList.add('active');
-        this.world.buildMap(this.selectedMap, 10101);
-        this.net.updateMyProfile({ mapId: this.selectedMap });
+  // Hair Color Swatches
+  const colorRow = document.getElementById('opt-hair-color');
+  if (colorRow) {
+    colorRow.innerHTML = '';
+    CUSTOMIZATION_CATALOG.hairColors.forEach((c) => {
+      const dot = document.createElement('button');
+      dot.className = 'color-dot-btn' + (myAppearance.hairColor === c.id ? ' active' : '');
+      dot.style.backgroundColor = c.id;
+      dot.title = c.label;
+      dot.addEventListener('click', () => {
+        sfx.customizePop();
+        myAppearance.hairColor = c.id;
+        refreshAvatarAndSync();
       });
+      colorRow.appendChild(dot);
+    });
+  }
+
+  // Selecting a Top or Bottom automatically disables full Suit so the user sees their choice immediately
+  bindPills('opt-top', CUSTOMIZATION_CATALOG.tops, 'top', (val) => {
+    myAppearance.top = val;
+    myAppearance.suit = 'none';
+  });
+
+  bindPills('opt-bottom', CUSTOMIZATION_CATALOG.bottoms, 'bottom', (val) => {
+    myAppearance.bottom = val;
+    myAppearance.suit = 'none';
+  });
+
+  bindPills('opt-suit', CUSTOMIZATION_CATALOG.suits, 'suit', (val) => {
+    myAppearance.suit = val;
+  });
+
+  const isWearingSuit = myAppearance.suit && myAppearance.suit !== 'none';
+  const suitObj = CUSTOMIZATION_CATALOG.suits.find((s) => s.id === myAppearance.suit);
+  const hintText = isWearingSuit ? `(目前已穿 ${suitObj ? suitObj.label.split(' ')[1] : '套裝'}，點選可切回混搭)` : '';
+  document.getElementById('top-override-hint').textContent = hintText;
+  document.getElementById('bottom-override-hint').textContent = hintText;
+}
+
+function refreshAvatarAndSync() {
+  renderCustomizationUI();
+  const cleanName = (nameInput.value || '下樓梯小霸王').trim().slice(0, 10) || '下樓梯小霸王';
+  lobbyAvatar.updateAppearance(myAppearance, cleanName);
+  saveProfileLocally();
+  network.updateMyProfile({
+    name: cleanName,
+    appearance: myAppearance
+  });
+}
+
+// Lobby Tab Switching
+document.querySelectorAll('.lobby-tab').forEach((tabBtn) => {
+  tabBtn.addEventListener('click', () => {
+    sfx.customizePop();
+    document.querySelectorAll('.lobby-tab').forEach((b) => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach((p) => p.classList.remove('active'));
+    tabBtn.classList.add('active');
+    const target = document.getElementById(tabBtn.dataset.tab);
+    if (target) target.classList.add('active');
+  });
+});
+
+// Randomize Buttons
+document.getElementById('btn-random-all').addEventListener('click', () => {
+  sfx.itemPickup();
+  nameInput.value = getRandomNickname();
+  myAppearance = getRandomAppearance(true);
+  refreshAvatarAndSync();
+});
+
+document.getElementById('btn-random-outfit').addEventListener('click', () => {
+  sfx.customizePop();
+  myAppearance = getRandomAppearance(true);
+  refreshAvatarAndSync();
+});
+
+document.getElementById('btn-random-name').addEventListener('click', () => {
+  sfx.customizePop();
+  nameInput.value = getRandomNickname();
+  refreshAvatarAndSync();
+});
+
+nameInput.addEventListener('input', () => {
+  refreshAvatarAndSync();
+});
+
+// Drag to rotate 3D preview character in Lobby
+const previewZone = document.getElementById('preview-touch-zone');
+let isDraggingPreview = false;
+let lastPreviewX = 0;
+previewZone.addEventListener('pointerdown', (e) => {
+  if (e.target.closest('button')) return;
+  isDraggingPreview = true;
+  lastPreviewX = e.clientX;
+});
+window.addEventListener('pointermove', (e) => {
+  if (!isDraggingPreview) return;
+  const dx = e.clientX - lastPreviewX;
+  lastPreviewX = e.clientX;
+  lobbyAvatar.group.rotation.y += dx * 0.015;
+});
+window.addEventListener('pointerup', () => {
+  isDraggingPreview = false;
+});
+
+// ================= NETWORK & ROOM SETUP =================
+const onlineStatusEl = document.getElementById('online-status');
+const roomInput = document.getElementById('room-input');
+const roomPwdInput = document.getElementById('room-pwd-input');
+const chkFillBots = document.getElementById('chk-fill-bots');
+const rosterListEl = document.getElementById('roster-list');
+const readyCounterEl = document.getElementById('ready-counter');
+const tabPlayerBadge = document.getElementById('tab-player-badge');
+const btnGuestReady = document.getElementById('btn-guest-ready');
+const btnHostStart = document.getElementById('btn-host-start');
+
+function showToast(msg) {
+  const t = document.getElementById('global-toast');
+  t.textContent = msg;
+  t.classList.remove('hidden');
+  clearTimeout(showToast._timer);
+  showToast._timer = setTimeout(() => t.classList.add('hidden'), 3200);
+}
+
+const network = new RoomNetwork({
+  onStatus: (text) => {
+    onlineStatusEl.textContent = text;
+  },
+  onAuthFailed: (msg) => {
+    showToast(msg);
+  },
+  onRosterUpdate: (playersArr, roomConfig, isHost, myId) => {
+    rosterListEl.innerHTML = '';
+    let readyCount = 0;
+    playersArr.forEach((p) => {
+      if (p.ready || p.isHost) readyCount++;
+      const chip = document.createElement('div');
+      chip.className = 'roster-chip' + (p.ready || p.isHost ? ' ready' : '');
+      const roleIcon = p.isHost ? '👑' : p.ready ? '✅' : '⏳';
+      chip.textContent = `${roleIcon} ${p.name}${p.id === myId ? ' (你)' : ''}`;
+      rosterListEl.appendChild(chip);
     });
 
-    // AI Bot Toggle
-    document.getElementById('chk-fill-bots')?.addEventListener('change', (e) => {
-      if (!this.net.isHost) {
-        e.target.checked = this.fillBots;
-        return;
-      }
-      this.fillBots = e.target.checked;
-      this.net.updateMyProfile({ fillBots: this.fillBots });
-    });
+    readyCounterEl.textContent = `準備 ${readyCount}/${playersArr.length}`;
+    tabPlayerBadge.textContent = `${playersArr.length}人`;
 
-    // Guest Ready Button
-    document.getElementById('btn-guest-ready')?.addEventListener('click', () => {
-      const nextReady = !this.net.myReady;
-      sfx.readyBeep(nextReady);
-      this.net.updateMyProfile({ ready: nextReady });
-      const btn = document.getElementById('btn-guest-ready');
-      if (btn) {
-        btn.classList.toggle('is-ready', nextReady);
-        btn.textContent = nextReady
-          ? '✅ 已準備完成！（點擊可取消・等待房主開始）'
-          : '⏳ 點擊準備完成（等待房主開始）';
-      }
-    });
+    if (isHost) {
+      btnHostStart.classList.remove('hidden');
+      btnGuestReady.classList.add('hidden');
+    } else {
+      btnHostStart.classList.add('hidden');
+      btnGuestReady.classList.remove('hidden');
+    }
+  },
+  onMatchStart: (payload) => {
+    startMatchFromPayload(payload);
+  },
+  onRemoteState: (playerId, state) => {
+    const p = players.get(playerId);
+    if (!p || p.isLocal) return;
+    p.targetX = state.x;
+    p.targetY = state.y;
+    p.targetZ = state.z;
+    p.vx = state.vx || 0;
+    p.vy = state.vy || 0;
+    p.vz = state.vz || 0;
+    p.rotY = state.rotY || 0;
 
-    // Host Start Match Button
-    document.getElementById('btn-host-start')?.addEventListener('click', () => {
-      if (!this.net.isHost) return;
-      const humans = Array.from(this.net.roomPlayers.values());
-      const unready = humans.filter((p) => !p.isHost && !p.ready);
-      if (unready.length > 0) {
-        this.showToast(`⚠️ 還有 ${unready.length} 位玩家尚未點擊準備，仍為您強制開局！`);
-      }
+    let needLabelRefresh = false;
+    if (state.hp !== undefined && p.hp !== state.hp) {
+      p.hp = state.hp;
+      p.avatar.hp = state.hp;
+      needLabelRefresh = true;
+    }
+    if (state.floor !== undefined) {
+      p.maxFloor = Math.max(p.maxFloor, state.floor);
+    }
+    if (state.heldItem !== undefined && p.heldItem !== state.heldItem) {
+      p.heldItem = state.heldItem;
+      p.avatar.heldItem = state.heldItem;
+      needLabelRefresh = true;
+    }
+    if (state.hasBomb !== undefined && p.hasBomb !== state.hasBomb) {
+      p.hasBomb = state.hasBomb;
+      p.avatar.hasBomb = state.hasBomb;
+      needLabelRefresh = true;
+    }
+    if (state.isGhost !== undefined && p.isGhost !== state.isGhost) {
+      p.isGhost = state.isGhost;
+      p.avatar.setGhostMode(state.isGhost);
+      needLabelRefresh = true;
+    }
+    if (needLabelRefresh) {
+      p.avatar.refreshOverheadLabel();
+    }
+  },
+  onRemoteAction: (playerId, action, payload) => {
+    handleIncomingAction(playerId, action, payload);
+  }
+});
 
-      // Build full participants list (Human players + AI bots if enabled)
-      const participants = humans.map((h) => ({
-        id: h.id,
-        name: h.name,
-        isBot: false
-      }));
+// Parse URL params for One-Click Invite Link
+const urlParams = new URLSearchParams(window.location.search);
+if (urlParams.get('room')) {
+  roomInput.value = urlParams.get('room').toUpperCase().slice(0, 8);
+}
+if (urlParams.get('pwd')) {
+  roomPwdInput.value = urlParams.get('pwd').slice(0, 8);
+}
 
-      if (this.fillBots) {
-        const targetCount = Math.max(6, participants.length + 1);
-        let botIdx = 0;
-        while (participants.length < targetCount) {
-          participants.push({
-            id: `bot_${botIdx + 1}`,
-            name: BOT_NAMES[botIdx % BOT_NAMES.length],
-            isBot: true
-          });
-          botIdx++;
-        }
-      } else if (participants.length < 2) {
-        // Ensure at least 1 AI opponent if solo testing with bots unchecked
-        participants.push({
-          id: 'bot_1',
-          name: '信義小籠包(AI)',
-          isBot: true
-        });
-      }
+renderCustomizationUI();
+refreshAvatarAndSync();
 
-      this.net.hostStartMatch(participants);
-    });
+network.joinOrCreateRoom({
+  roomId: roomInput.value,
+  password: roomPwdInput.value,
+  playerName: nameInput.value,
+  appearance: myAppearance,
+  fillBots: chkFillBots.checked
+});
 
-    // Build In-Game Pose Buttons Row
-    const poseRow = document.getElementById('pose-buttons-row');
-    if (poseRow) {
-      poseRow.innerHTML = '';
-      POSE_LIST.forEach((p) => {
-        const btn = document.createElement('button');
-        btn.className = `pose-pill-btn ${p.id === 'stand' ? 'active' : ''}`;
-        btn.dataset.poseId = p.id;
-        btn.innerHTML = `${p.icon} ${p.name}`;
-        btn.addEventListener('click', () => {
-          this.selectChameleonPose(p.id);
-        });
-        poseRow.appendChild(btn);
+document.getElementById('btn-join-room').addEventListener('click', () => {
+  sfx.readyBeep(true);
+  network.joinOrCreateRoom({
+    roomId: roomInput.value,
+    password: roomPwdInput.value,
+    playerName: nameInput.value,
+    appearance: myAppearance,
+    fillBots: chkFillBots.checked
+  });
+});
+
+function copyRoomInviteLink() {
+  sfx.customizePop();
+  const url = new URL(window.location.href);
+  url.searchParams.set('room', network.roomId);
+  if (roomPwdInput.value.trim()) {
+    url.searchParams.set('pwd', roomPwdInput.value.trim());
+  } else {
+    url.searchParams.delete('pwd');
+  }
+  navigator.clipboard?.writeText(url.toString()).catch(() => {});
+  showToast('🔗 已複製專屬邀請連結！傳給朋友點開直接進房！');
+}
+
+document.getElementById('btn-share-link').addEventListener('click', copyRoomInviteLink);
+document.getElementById('btn-top-share').addEventListener('click', copyRoomInviteLink);
+
+btnGuestReady.addEventListener('click', () => {
+  const nextReady = !network.myReady;
+  sfx.readyBeep(nextReady);
+  network.updateMyProfile({ ready: nextReady });
+  btnGuestReady.textContent = nextReady
+    ? '✅ 已準備完成！（點擊取消）'
+    : '⏳ 點擊準備完成（等待房主開局）';
+});
+
+btnHostStart.addEventListener('click', () => {
+  if (!network.isHost) return;
+  sfx.countdown(true);
+  const humanPlayers = Array.from(network.roomPlayers.values()).map((p) => ({
+    id: p.id,
+    name: p.name,
+    appearance: p.appearance || getRandomAppearance(true),
+    isBot: false
+  }));
+
+  const fullList = [...humanPlayers];
+  if (chkFillBots.checked) {
+    const targetCount = Math.max(6, humanPlayers.length);
+    let botIdx = 1;
+    while (fullList.length < targetCount) {
+      fullList.push({
+        id: `bot_${botIdx++}`,
+        name: `🤖 ${getRandomNickname()}`,
+        appearance: getRandomAppearance(true),
+        isBot: true
       });
     }
+  }
 
-    // Tilt Slider & Reset
-    const tiltSlider = document.getElementById('tilt-slider');
-    tiltSlider?.addEventListener('input', (e) => {
-      const deg = Number(e.target.value || 0);
-      this.myAvatar.setTilt((deg * Math.PI) / 180);
+  network.hostStartMatch(fullList);
+});
+
+// ================= MATCH INITIALIZATION =================
+function switchScreen(screenId) {
+  document.querySelectorAll('.screen').forEach((s) => s.classList.remove('active'));
+  const target = document.getElementById(screenId);
+  if (target) target.classList.add('active');
+}
+
+function addEventFeed(text) {
+  const feed = document.getElementById('event-feed');
+  if (!feed) return;
+  const item = document.createElement('div');
+  item.className = 'feed-item';
+  item.textContent = text;
+  feed.prepend(item);
+  while (feed.children.length > 4) {
+    feed.removeChild(feed.lastChild);
+  }
+  setTimeout(() => {
+    if (item.parentNode === feed) feed.removeChild(item);
+  }, 4500);
+}
+
+function showCenterBanner(text, duration = 2000) {
+  const banner = document.getElementById('center-banner');
+  banner.textContent = text;
+  banner.classList.remove('hidden');
+  clearTimeout(showCenterBanner._t);
+  showCenterBanner._t = setTimeout(() => banner.classList.add('hidden'), duration);
+}
+
+function startMatchFromPayload(payload) {
+  sfx.countdown(true);
+  gameState = 'playing';
+  lobbyStageGroup.visible = false;
+  world.root.visible = true;
+  world.resetWorld(payload.seed || 123456);
+
+  // Clean up previous player meshes
+  players.forEach((p) => scene.remove(p.avatar.group));
+  players.clear();
+
+  matchParticipants = payload.participants || [];
+  const total = matchParticipants.length;
+
+  matchParticipants.forEach((part, idx) => {
+    const isMe = part.id === network.myId;
+    const avatar = new CharacterAvatar({
+      id: part.id,
+      name: part.name,
+      isLocal: isMe,
+      appearance: part.appearance || getRandomAppearance(true)
     });
-    document.getElementById('btn-reset-tilt')?.addEventListener('click', () => {
-      if (tiltSlider) tiltSlider.value = '0';
-      this.myAvatar.setTilt(0);
-    });
+    scene.add(avatar.group);
 
-    // Lock Position Toggle
-    document.getElementById('btn-lock-pos')?.addEventListener('click', () => {
-      this.togglePositionLock(!this.isPositionLocked);
-    });
+    // Spread players across Floor 1 safe platform (y = -3.4)
+    const spreadX = (idx - (total - 1) / 2) * 1.15;
+    const startX = Math.max(-3.8, Math.min(3.8, spreadX));
+    const startY = -FLOOR_VERTICAL_GAP + 0.35;
+    const startZ = (idx % 2 === 0 ? -0.5 : 0.5);
 
-    // 1-Click Surroundings Auto-Camo Button!
-    document.getElementById('btn-auto-camo')?.addEventListener('click', () => {
-      this.triggerSurroundingsAutoCamo();
-    });
+    avatar.group.position.set(startX, startY, startZ);
 
-    // Boba Smoke Escape Button
-    document.getElementById('btn-boba-smoke')?.addEventListener('click', () => {
-      this.triggerBobaSmoke();
-    });
-
-    // Taiwanese Taunt Button
-    document.getElementById('btn-taunt')?.addEventListener('click', () => {
-      this.triggerTaunt(true);
-    });
-
-    // Jump Buttons
-    document.getElementById('btn-jump-cham')?.addEventListener('click', () => this.triggerJump());
-    document.getElementById('btn-jump-hunt')?.addEventListener('click', () => this.triggerJump());
-
-    // Hunter Blue-White Slipper Attack Button!
-    document.getElementById('btn-slipper-attack')?.addEventListener('click', () => {
-      this.triggerHunterSlipperAttack();
-    });
-
-    // Hunter Radar Scan Button
-    document.getElementById('btn-radar-scan')?.addEventListener('click', () => {
-      this.triggerHunterRadar();
-    });
-
-    // Host Skip Hide Phase Buttons
-    const skipHandler = () => {
-      if (this.phase === 'hide') {
-        this.enterHuntPhase();
-        this.net.sendAction('skip_hide', {});
-      }
+    const pObj = {
+      id: part.id,
+      name: part.name,
+      isLocal: isMe,
+      isBot: Boolean(part.isBot),
+      avatar,
+      x: startX,
+      y: startY,
+      z: startZ,
+      targetX: startX,
+      targetY: startY,
+      targetZ: startZ,
+      vx: 0,
+      vy: 0,
+      vz: 0,
+      rotY: 0,
+      hp: 12,
+      maxFloor: 1,
+      kills: 0,
+      isGrounded: true,
+      currentPlatformKey: 1,
+      lastHealedFloor: 1,
+      lavaStandTimer: 0,
+      heldItem: null,
+      hasBomb: false,
+      bombTimer: 0,
+      bombPassImmunity: 0,
+      isGhost: false,
+      survivalOrder: 0,
+      botThinkTimer: 0,
+      botTargetX: startX,
+      botTargetZ: startZ,
+      lastAttackerId: null
     };
-    document.getElementById('btn-skip-hide')?.addEventListener('click', skipHandler);
-    document.getElementById('btn-chameleon-skip-hide')?.addEventListener('click', skipHandler);
 
-    // Back to Lobby from Result Screen
-    document.getElementById('btn-back-lobby')?.addEventListener('click', () => {
-      this.returnToLobby();
-    });
+    players.set(part.id, pObj);
+    if (isMe) localPlayer = pObj;
+  });
+
+  if (!localPlayer && players.size > 0) {
+    localPlayer = players.values().next().value;
   }
 
-  renderLobbyRoster(players, roomConfig, isHost, myId) {
-    // Sync map selection UI if Guest
-    if (!isHost && roomConfig) {
-      if (roomConfig.mapId && roomConfig.mapId !== this.selectedMap) {
-        this.selectedMap = roomConfig.mapId;
-        this.world.buildMap(this.selectedMap, 10101);
-      }
-      document.querySelectorAll('.map-card').forEach((c) => {
-        c.classList.toggle('active', c.getAttribute('data-map') === this.selectedMap);
-      });
-      const botChk = document.getElementById('chk-fill-bots');
-      if (botChk && roomConfig.fillBots !== undefined) {
-        botChk.checked = roomConfig.fillBots;
-      }
-    }
+  updateHudUI();
+  updateItemButtonUI();
+  switchScreen('hud-screen');
+  showCenterBanner('🔥 深淵大逃殺開始！小心頭頂尖刺與身邊損友！', 2600);
+}
 
-    const rosterEl = document.getElementById('roster-list');
-    const readyCountEl = document.getElementById('ready-counter');
-    if (rosterEl) {
-      rosterEl.innerHTML = '';
-      let readyCount = 0;
-      players.forEach((p) => {
-        if (p.ready || p.isHost) readyCount++;
-        const row = document.createElement('div');
-        row.className = 'roster-item';
-        const roleIcon = p.isHost ? '👑 房主' : '👤 玩家';
-        const meTag = p.id === myId ? ' (你)' : '';
-        const statusClass = p.ready || p.isHost ? 'ready' : 'wait';
-        const statusText = p.isHost ? '👑 房主就緒' : p.ready ? '✅ 已準備' : '⏳ 準備中';
-        row.innerHTML = `
-          <span class="roster-name">${roleIcon}・${p.name}${meTag}</span>
-          <span class="roster-status ${statusClass}">${statusText}</span>
-        `;
-        rosterEl.appendChild(row);
-      });
-      if (readyCountEl) {
-        readyCountEl.textContent = `已準備 ${readyCount}/${players.length}`;
-      }
-    }
+// ================= HUD & ITEM UI UPDATES =================
+function updateHudUI() {
+  if (!localPlayer) return;
+  const floorEl = document.getElementById('hud-floor');
+  floorEl.textContent = `🌊 地下 B${String(localPlayer.maxFloor).padStart(3, '0')} 層`;
 
-    // Show Host Start vs Guest Ready button
-    const hostBtn = document.getElementById('btn-host-start');
-    const guestBtn = document.getElementById('btn-guest-ready');
-    if (hostBtn && guestBtn) {
-      hostBtn.classList.toggle('hidden', !isHost);
-      guestBtn.classList.toggle('hidden', isHost);
+  const hpText = document.getElementById('hud-hp-text');
+  hpText.textContent = localPlayer.isGhost ? '👻 背後靈' : `❤️ ${localPlayer.hp}/12`;
+
+  const segWrap = document.getElementById('hud-hp-segments');
+  segWrap.innerHTML = '';
+  for (let i = 0; i < 12; i++) {
+    const seg = document.createElement('div');
+    let cls = 'hp-seg';
+    if (!localPlayer.isGhost && i < localPlayer.hp) {
+      cls += ' filled';
+      if (localPlayer.hp <= 4) cls += ' danger';
+      else if (localPlayer.hp <= 7) cls += ' warn';
     }
+    seg.className = cls;
+    segWrap.appendChild(seg);
   }
 
-  // ==================== MATCH INITIALIZATION ====================
-  startMatchFromHostPayload(payload) {
-    sfx.countdown(true);
-    this.selectedMap = payload.mapId || 'taipei101';
-    this.world.buildMap(this.selectedMap, payload.seed || 12345);
-
-    this.otherPlayers.forEach((p) => this.scene.remove(p.avatar.root));
-    this.otherPlayers.clear();
-
-    const hunterSet = new Set(payload.initialHunterIds || []);
-    const participants = payload.participants || [];
-
-    // Determine my role
-    const amIHunter = hunterSet.has(this.net.myId);
-    this.myScore = 0;
-    this.bobaCharges = 2;
-    this.bobaSpeedTimer = 0;
-    this.attackCooldown = 0;
-    this.penaltyTimer = 0;
-    this.radarCooldown = 0;
-    this.isPositionLocked = false;
-    this.togglePositionLock(false);
-
-    this.myAvatar.name = this.net.myName;
-    if (amIHunter) {
-      this.myAvatar.setRole('hunter');
-      this.myPos.set(0, 0, 28); // Inside Metro Exit 4 Holding Gate!
-      this.myRotY = Math.PI;
-    } else {
-      this.myAvatar.setRole('chameleon');
-      this.myAvatar.resetToPureWhite(); // Starts 100% Pure White!
-      this.myPos.set((Math.random() - 0.5) * 8, 0, 6 + (Math.random() - 0.5) * 4);
-      this.myRotY = 0;
-    }
-
-    // Spawn Other Human Players & AI Bots
-    participants.forEach((p, idx) => {
-      if (p.id === this.net.myId) return;
-      const role = hunterSet.has(p.id) ? 'hunter' : 'chameleon';
-      const avatar = new ChameleonAvatar(p.name, role);
-      if (role === 'chameleon') {
-        avatar.resetToPureWhite();
-      }
-      this.scene.add(avatar.root);
-
-      const startX = role === 'hunter' ? (idx % 2 === 0 ? -1.5 : 1.5) : (idx - 2.5) * 2.5;
-      const startZ = role === 'hunter' ? 28 : 5;
-      avatar.root.position.set(startX, 0, startZ);
-
-      // Pick a hiding spot for AI Chameleon bots
-      const spot = this.world.hidingSpots[idx % Math.max(1, this.world.hidingSpots.length)];
-
-      this.otherPlayers.set(p.id, {
-        id: p.id,
-        name: p.name,
-        isBot: Boolean(p.isBot),
-        avatar,
-        x: startX,
-        y: 0,
-        z: startZ,
-        rotY: 0,
-        role,
-        score: 0,
-        botSpot: spot,
-        botBlended: false,
-        botWanderAngle: Math.random() * Math.PI * 2,
-        botStateTimer: 0
-      });
-    });
-
-    // Set Phase to 90s Hide Phase
-    this.phase = 'hide';
-    this.phaseTimer = HIDE_PHASE_SECONDS;
-    this.world.setHunterGateLocked(true);
-
-    this.switchScreen('hud');
-    this.updateRoleHUD();
-
-    const hunterNames = participants
-      .filter((p) => hunterSet.has(p.id))
-      .map((p) => p.name)
-      .join('、');
-
-    this.showCenterBanner(
-      amIHunter
-        ? `🩴 你被抽中當「鬼」！等待 90 秒後出動抓人！`
-        : `🦎 你是「純白變色龍」！鬼是【${hunterNames}】，快在 90 秒內換動作＋吸色偽裝！`,
-      4200
-    );
-  }
-
-  enterHuntPhase() {
-    if (this.phase === 'hunt') return;
-    this.phase = 'hunt';
-    this.phaseTimer = HUNT_PHASE_SECONDS; // 4m30s (270s)
-    this.world.setHunterGateLocked(false);
-    sfx.countdown(true);
-
-    document.getElementById('hunter-wait-panel')?.classList.add('hidden');
-    document.getElementById('btn-chameleon-skip-hide')?.classList.add('hidden');
-
-    this.showCenterBanner('🩴 90秒結束！藍白拖獵人正式出動！（追捕倒數 4分30秒）', 3800);
-    this.addEventFeed('🚨 捷運站出口開啟！鬼拿著藍白拖出動了！');
-  }
-
-  updateRoleHUD() {
-    const isHunter = this.myAvatar.role === 'hunter';
-    const badge = document.getElementById('hud-role-badge');
-    if (badge) {
-      badge.className = `role-badge ${isHunter ? 'hunter' : 'chameleon'}`;
-      badge.textContent = isHunter ? '🩴 抓人者：藍白拖鬼' : '🦎 躲藏者：純白變色龍';
-    }
-
-    document.getElementById('chameleon-actions')?.classList.toggle('hidden', isHunter);
-    document.getElementById('chameleon-pose-bar')?.classList.toggle('hidden', isHunter);
-    document.getElementById('btn-lock-pos')?.classList.toggle('hidden', isHunter);
-    document.getElementById('hunter-actions')?.classList.toggle('hidden', !isHunter);
-
-    const inHidePhase = this.phase === 'hide';
-    document.getElementById('hunter-wait-panel')?.classList.toggle('hidden', !(isHunter && inHidePhase));
-    document.getElementById('btn-skip-hide')?.classList.toggle('hidden', !this.net.isHost);
-    document.getElementById('btn-chameleon-skip-hide')?.classList.toggle('hidden', !(this.net.isHost && !isHunter && inHidePhase));
-
-    this.updateBodyColorDotsUI();
-  }
-
-  updateBodyColorDotsUI() {
-    const dots = document.querySelectorAll('#body-color-dots span');
-    dots.forEach((dot, idx) => {
-      dot.style.background = this.myAvatar.partColors[idx] || '#ffffff';
-    });
-  }
-
-  // ==================== CHAMELEON MECHANICS ====================
-  selectChameleonPose(poseId) {
-    if (this.myAvatar.role !== 'chameleon') return;
-    sfx.poseChange();
-    this.myAvatar.applyPose(poseId);
-    document.querySelectorAll('#pose-buttons-row .pose-pill-btn').forEach((btn) => {
-      btn.classList.toggle('active', btn.dataset.poseId === poseId);
-    });
-  }
-
-  togglePositionLock(locked) {
-    this.isPositionLocked = locked;
-    const btn = document.getElementById('btn-lock-pos');
-    if (btn) {
-      btn.classList.toggle('locked', locked);
-      btn.textContent = locked
-        ? '🔒 已鎖定位置（滑動螢幕可360°偷看鬼）'
-        : '🔓 自由移動中 (點此鎖定不動)';
-    }
-  }
-
-  // 核心功能：一鍵快速塗上周邊相同顏色 (6 部位自動射線採樣)
-  triggerSurroundingsAutoCamo() {
-    if (this.myAvatar.role !== 'chameleon') return;
-    sfx.paintBlend();
-
-    const centers = this.myAvatar.getPartWorldCenters();
-    const sampledParts = this.world.sampleSurroundingColorsForParts(centers);
-    this.myAvatar.setAllParts(sampledParts);
-    this.updateBodyColorDotsUI();
-
-    // Spawn subtle sparkle ring
-    this.spawnColorBurstEffect(this.myPos.x, this.myPos.y + 0.8, this.myPos.z, sampledParts[1].color);
-    this.showToast('🎨 已自動吸取周邊環境顏色與質感！');
-  }
-
-  // 點擊 3D 畫面上的任何物件直接秒吸色
-  trySampleColorFromScreenTap(clientX, clientY) {
-    if (this.screenState !== 'playing' || this.myAvatar.role !== 'chameleon') return;
-
-    const rect = this.canvas.getBoundingClientRect();
-    const ndc = new THREE.Vector2(
-      ((clientX - rect.left) / rect.width) * 2 - 1,
-      -((clientY - rect.top) / rect.height) * 2 + 1
-    );
-
-    const raycaster = new THREE.Raycaster();
-    raycaster.setFromCamera(ndc, this.camera);
-    const hits = raycaster.intersectObjects(this.world.paintableMeshes, false);
-
-    if (hits.length > 0 && hits[0].distance < 18) {
-      const obj = hits[0].object;
-      if (obj.userData && obj.userData.paintColor) {
-        sfx.colorPick();
-        this.myAvatar.setSingleColor(
-          obj.userData.paintColor,
-          obj.userData.roughness ?? 0.5,
-          obj.userData.metalness ?? 0.05
-        );
-        this.updateBodyColorDotsUI();
-      }
-    }
-  }
-
-  triggerBobaSmoke() {
-    if (this.myAvatar.role !== 'chameleon' || this.bobaCharges <= 0) return;
-    this.bobaCharges--;
-    this.bobaSpeedTimer = 4.5;
-    this.togglePositionLock(false);
-    sfx.bobaSmoke();
-
-    const countEl = document.getElementById('boba-count');
-    if (countEl) countEl.textContent = `(${this.bobaCharges})`;
-
-    this.spawnBobaSmokeCloud(this.myPos.x, this.myPos.z);
-    this.net.sendAction('boba_smoke', { x: this.myPos.x, z: this.myPos.z });
-    this.showToast('🧋 施放黑糖珍奶煙霧彈！加速逃跑 4.5 秒！');
-  }
-
-  spawnBobaSmokeCloud(x, z) {
-    const group = new THREE.Group();
-    group.position.set(x, 0.2, z);
-
-    const smokeMat = new THREE.MeshStandardMaterial({
-      color: 0x451a03,
-      transparent: true,
-      opacity: 0.85,
-      roughness: 0.9
-    });
-
-    for (let i = 0; i < 14; i++) {
-      const r = 0.35 + Math.random() * 0.65;
-      const p = new THREE.Mesh(new THREE.SphereGeometry(r, 10, 10), smokeMat);
-      p.position.set((Math.random() - 0.5) * 3.2, Math.random() * 1.8, (Math.random() - 0.5) * 3.2);
-      group.add(p);
-    }
-
-    this.scene.add(group);
-    this.smokeClouds.push({ mesh: group, timer: 4.5 });
-  }
-
-  spawnColorBurstEffect(x, y, z, hexColor) {
-    const mat = new THREE.MeshBasicMaterial({
-      color: new THREE.Color(hexColor),
-      wireframe: true,
-      transparent: true,
-      opacity: 0.85
-    });
-    const ring = new THREE.Mesh(new THREE.SphereGeometry(0.9, 12, 12), mat);
-    ring.position.set(x, y, z);
-    this.scene.add(ring);
-    this.smokeClouds.push({ mesh: ring, timer: 0.45, isBurst: true });
-  }
-
-  triggerTaunt(manual = true) {
-    if (this.myAvatar.role !== 'chameleon') return;
-    if (manual && this.tauntCooldown > 0) return;
-
-    if (Math.random() < 0.5) {
-      sfx.tauntBabu();
-    } else {
-      sfx.tauntGarbageTruck();
-    }
-
-    if (manual) {
-      this.myScore += 30;
-      this.tauntCooldown = 10;
-      this.showToast('🔊 巴哺嘲諷成功！積分 +30！');
-    } else {
-      this.showToast('🔊 忍不住發出了台味嘲諷聲音！小心鬼聽聲辨位！');
-    }
-
-    this.spawnColorBurstEffect(this.myPos.x, this.myPos.y + 1.5, this.myPos.z, '#ec4899');
-    this.net.sendAction('taunt', { x: this.myPos.x, z: this.myPos.z, name: this.myAvatar.name });
-  }
-
-  // ==================== HUNTER MECHANICS (藍白拖敲打 & 4秒敲錯懲罰) ====================
-  triggerHunterSlipperAttack() {
-    if (this.myAvatar.role !== 'hunter') return;
-    if (this.phase === 'hide') {
-      this.showToast('🙈 目前是 90 秒躲藏期，倒數結束後才能出動敲人！');
-      return;
-    }
-    if (this.penaltyTimer > 0) {
-      this.showToast(`⚡ 手麻撿拖鞋硬直中！還要等 ${this.penaltyTimer.toFixed(1)} 秒！`, true);
-      return;
-    }
-    if (this.attackCooldown > 0) {
-      return;
-    }
-
-    this.myAvatar.triggerSlipperSwing();
-    this.net.sendAction('slipper_swing', {});
-
-    // 1. Check if we hit any Chameleon within 2.5m horizontally & 1.8m vertically
-    let hitTarget = null;
-    let bestDist = 2.55;
-
-    for (const [, p] of this.otherPlayers.entries()) {
-      if (p.role !== 'chameleon') continue;
-      const dy = Math.abs((p.y || 0) - this.myPos.y);
-      if (dy > 1.85) continue;
-      const dx = p.x - this.myPos.x;
-      const dz = p.z - this.myPos.z;
-      const dist = Math.hypot(dx, dz);
-      if (dist < bestDist) {
-        bestDist = dist;
-        hitTarget = p;
-      }
-    }
-
-    if (hitTarget) {
-      // SUCCESS! Hit a hiding Chameleon -> Infect them into a Hunter!
-      sfx.slipperHitPlayer();
-      this.attackCooldown = 1.0;
-      this.myScore += 60;
-      this.infectPlayer(hitTarget.id, this.myAvatar.name);
-      this.net.sendAction('infect_player', {
-        targetId: hitTarget.id,
-        hunterName: this.myAvatar.name
-      });
-      return;
-    }
-
-    // 2. Didn't hit a Chameleon -> Check if we hit a REAL scene prop by mistake!
-    const forward = new THREE.Vector3(Math.sin(this.myRotY), 0, Math.cos(this.myRotY)).normalize();
-    const rayOrigin = new THREE.Vector3(this.myPos.x, this.myPos.y + 0.75, this.myPos.z);
-    const raycaster = new THREE.Raycaster(rayOrigin, forward, 0.1, 2.35);
-    const propHits = raycaster.intersectObjects(this.world.decoyPropMeshes, false);
-
-    // Also check proximity to any decoy prop bounding center
-    let hitRealProp = propHits.length > 0;
-    if (!hitRealProp) {
-      for (const mesh of this.world.decoyPropMeshes) {
-        const wp = new THREE.Vector3();
-        mesh.getWorldPosition(wp);
-        if (Math.hypot(wp.x - (this.myPos.x + forward.x * 1.1), wp.z - (this.myPos.z + forward.z * 1.1)) < 1.35) {
-          hitRealProp = true;
-          break;
-        }
-      }
-    }
-
-    if (hitRealProp) {
-      // ⚠️ WRONG HIT ON REAL PROP! Trigger 4.0-second Hand-Numbness & Dropped Slipper Penalty!
-      sfx.slipperPenalty();
-      this.penaltyTimer = 4.0;
-      this.attackCooldown = 4.0;
-      this.myAvatar.stunnedTimer = 4.0;
-      this.showToast('⚡ 敲到真物件了！手麻掉拖鞋罰站 4 秒！', true);
-      this.addEventFeed(`💥 ${this.myAvatar.name} 藍白拖敲錯真物件，手麻硬直 4 秒！`);
-    } else {
-      // Normal Miss in open air -> 1.8s recovery cooldown to prevent continuous spam
-      sfx.slipperSwing();
-      this.attackCooldown = 1.8;
-    }
-  }
-
-  infectPlayer(targetId, hunterName) {
-    if (targetId === this.net.myId) {
-      if (this.myAvatar.role === 'hunter') return;
-      sfx.slipperHitPlayer();
-      this.myAvatar.setRole('hunter');
-      this.isPositionLocked = false;
-      this.togglePositionLock(false);
-      this.updateRoleHUD();
-      this.showCenterBanner(`🩴 啪！你被【${hunterName}】的藍白拖抓到了！\n感染變成「鬼」，快一起抓剩下的變色龍！`, 4000);
-      this.addEventFeed(`🦠 ${this.myAvatar.name} 被 ${hunterName} 敲中，感染變成藍白拖鬼！`);
-    } else {
-      const p = this.otherPlayers.get(targetId);
-      if (p && p.role !== 'hunter') {
-        p.role = 'hunter';
-        p.avatar.setRole('hunter');
-        this.addEventFeed(`🦠 ${p.name} 被 ${hunterName} 的藍白拖抓獲，感染變成鬼！`);
-      }
-    }
-
-    this.checkAllChameleonsCaught();
-  }
-
-  triggerHunterRadar() {
-    if (this.myAvatar.role !== 'hunter' || this.radarCooldown > 0) return;
-    this.radarCooldown = 22;
-    sfx.readyBeep(true);
-
-    let nearCount = 0;
-    for (const [, p] of this.otherPlayers.entries()) {
-      if (p.role === 'chameleon') {
-        const d = Math.hypot(p.x - this.myPos.x, p.z - this.myPos.z);
-        if (d <= 18) nearCount++;
-      }
-    }
-
-    if (nearCount > 0) {
-      this.showToast(`📡 逼逼雷達：半徑 18 公尺內有 ${nearCount} 隻偽裝變色龍！`);
-    } else {
-      this.showToast('📡 逼逼雷達：附近 18 公尺內沒有變色龍，換個區域找找！');
-    }
-  }
-
-  triggerJump() {
-    if (this.isPositionLocked || this.penaltyTimer > 0) return;
-    if (this.isGrounded) {
-      this.myVelY = 7.2;
-      this.isGrounded = false;
-      sfx.jump();
-    }
-  }
-
-  // ==================== NETWORK SYNC & AI BOTS ====================
-  applyRemotePlayerState(playerId, state) {
-    if (!state || playerId === this.net.myId) return;
-    let p = this.otherPlayers.get(playerId);
-    if (!p) {
-      const avatar = new ChameleonAvatar(state.name || '連線玩家', state.role || 'chameleon');
-      this.scene.add(avatar.root);
-      p = {
-        id: playerId,
-        name: state.name || '連線玩家',
-        isBot: false,
-        avatar,
-        x: state.x || 0,
-        y: state.y || 0,
-        z: state.z || 0,
-        rotY: state.rotY || 0,
-        role: state.role || 'chameleon',
-        score: state.score || 0
-      };
-      this.otherPlayers.set(playerId, p);
-    }
-
-    p.x = state.x ?? p.x;
-    p.y = state.y ?? p.y;
-    p.z = state.z ?? p.z;
-    p.rotY = state.rotY ?? p.rotY;
-    p.score = state.score ?? p.score;
-    p.role = state.role || p.role;
-
-    if (state.appearance) {
-      p.avatar.applyRemoteAppearance(state.appearance);
-    }
-  }
-
-  handleRemoteAction(playerId, action, payload) {
-    if (action === 'infect_player' && payload) {
-      this.infectPlayer(payload.targetId, payload.hunterName || '獵人');
-    } else if (action === 'skip_hide') {
-      this.enterHuntPhase();
-    } else if (action === 'boba_smoke' && payload) {
-      sfx.bobaSmoke();
-      this.spawnBobaSmokeCloud(payload.x, payload.z);
-    } else if (action === 'taunt' && payload) {
-      sfx.tauntBabu();
-      this.addEventFeed(`🔊 場上傳來【${payload.name}】的巴哺嘲諷聲！`);
-      this.spawnColorBurstEffect(payload.x, 1.4, payload.z, '#ec4899');
-    } else if (action === 'slipper_swing') {
-      const p = this.otherPlayers.get(playerId);
-      if (p) p.avatar.triggerSlipperSwing();
-    }
-  }
-
-  updateAIBots(dt) {
-    for (const [, bot] of this.otherPlayers.entries()) {
-      if (!bot.isBot) continue;
-
-      if (bot.role === 'chameleon') {
-        // During Hide Phase: run to assigned landmark hiding spot, strike pose & auto-blend!
-        if (bot.botSpot && !bot.botBlended) {
-          const dx = bot.botSpot.x - bot.x;
-          const dz = bot.botSpot.z - bot.z;
-          const dist = Math.hypot(dx, dz);
-          if (dist > 0.35) {
-            const step = Math.min(dist, 5.8 * dt);
-            bot.x += (dx / dist) * step;
-            bot.z += (dz / dist) * step;
-            bot.y = this.world.getSurfaceHeightAt(bot.x, bot.z, bot.y);
-            bot.rotY = Math.atan2(dx, dz);
-            bot.avatar.update(dt, true);
-          } else {
-            bot.x = bot.botSpot.x;
-            bot.z = bot.botSpot.z;
-            bot.y = bot.botSpot.y !== undefined ? bot.botSpot.y : this.world.getSurfaceHeightAt(bot.x, bot.z, bot.y);
-            bot.rotY = bot.botSpot.rotY || 0;
-            bot.avatar.applyPose(bot.botSpot.poseId || 'cone');
-            const partData = (bot.botSpot.colors || []).map((c, idx) => ({
-              color: c,
-              roughness: bot.botSpot.roughness ? bot.botSpot.roughness[idx] : 0.45,
-              metalness: 0.05
-            }));
-            bot.avatar.setAllParts(partData);
-            bot.botBlended = true;
-            bot.avatar.update(dt, false);
-          }
-        } else {
-          // Stay frozen in camouflage pose!
-          if (this.phase === 'hunt') {
-            bot.score += dt;
-          }
-          bot.avatar.update(dt, false);
-        }
-      } else if (bot.role === 'hunter') {
-        // AI Hunter waits in holding gate during 90s Hide Phase, then patrols plaza!
-        if (this.phase === 'hide') {
-          bot.avatar.update(dt, false);
-          continue;
-        }
-
-        if (bot.avatar.stunnedTimer > 0) {
-          bot.avatar.update(dt, false);
-          continue;
-        }
-
-        bot.botStateTimer -= dt;
-        if (bot.botStateTimer <= 0) {
-          bot.botStateTimer = 2.0 + Math.random() * 2.5;
-          // Gently steer toward a random plaza point or nearby moving player
-          const targetX = (Math.random() - 0.5) * 30;
-          const targetZ = (Math.random() - 0.5) * 28;
-          bot.botWanderAngle = Math.atan2(targetX - bot.x, targetZ - bot.z);
-        }
-
-        bot.x += Math.sin(bot.botWanderAngle) * 5.2 * dt;
-        bot.z += Math.cos(bot.botWanderAngle) * 5.2 * dt;
-        const resolvedBot = this.world.resolveHorizontalCollision(bot.x, bot.y, bot.z, 0.38);
-        bot.x = Math.max(-34, Math.min(34, resolvedBot.x));
-        bot.z = Math.max(-26, Math.min(26, resolvedBot.z));
-        bot.y = this.world.getSurfaceHeightAt(bot.x, bot.z, bot.y);
-        bot.rotY = bot.botWanderAngle;
-        bot.avatar.update(dt, true);
-
-        // Check if AI Hunter catches a player who is moving or pure white nearby
-        if (this.myAvatar.role === 'chameleon') {
-          const dy = Math.abs(this.myPos.y - bot.y);
-          const dMe = Math.hypot(this.myPos.x - bot.x, this.myPos.z - bot.z);
-          const isMePureWhite = this.myAvatar.partColors[0] === '#ffffff' && this.myAvatar.poseId === 'stand';
-          const detectRadius = isMePureWhite || !this.isPositionLocked ? 2.1 : 0.85;
-          if (dy < 1.8 && dMe < detectRadius) {
-            bot.avatar.triggerSlipperSwing();
-            this.infectPlayer(this.net.myId, bot.name);
-          }
-        }
-      }
-
-      bot.avatar.root.position.set(bot.x, bot.y, bot.z);
-      bot.avatar.root.rotation.y = bot.rotY;
-      // Hide Chameleon nametags from Hunters so they have to spot them by sight!
-      if (bot.avatar.nameSprite) {
-        bot.avatar.nameSprite.visible = !(this.myAvatar.role === 'hunter' && bot.role === 'chameleon');
-      }
-    }
-  }
-
-  checkAllChameleonsCaught() {
-    if (this.screenState !== 'playing') return;
-    let chamCount = this.myAvatar.role === 'chameleon' ? 1 : 0;
-    for (const [, p] of this.otherPlayers.entries()) {
-      if (p.role === 'chameleon') chamCount++;
-    }
-    if (chamCount === 0) {
-      this.finishRound('hunters_win');
-    }
-  }
-
-  finishRound(reason = 'time_up') {
-    if (this.screenState === 'result') return;
-    this.screenState = 'result';
-    sfx.win();
-    this.switchScreen('result');
-
-    let chamSurvivors = this.myAvatar.role === 'chameleon' ? 1 : 0;
-    let hunterCount = this.myAvatar.role === 'hunter' ? 1 : 0;
-    for (const [, p] of this.otherPlayers.entries()) {
-      if (p.role === 'chameleon') chamSurvivors++;
-      else hunterCount++;
-    }
-
-    const trophyEl = document.getElementById('result-trophy');
-    const titleEl = document.getElementById('result-title');
-    const subEl = document.getElementById('result-subtitle');
-
-    if (chamSurvivors > 0) {
-      if (trophyEl) trophyEl.textContent = '🦎🏆';
-      if (titleEl) titleEl.textContent = '時間到！變色龍偽裝大獲全勝！';
-      if (this.myAvatar.role === 'chameleon') this.myScore += 120;
-    } else {
-      if (trophyEl) trophyEl.textContent = '🩴👑';
-      if (titleEl) titleEl.textContent = '全數抓獲！藍白拖獵人陣營全勝！';
-    }
-
-    if (subEl) {
-      subEl.textContent = `最終倖存變色龍: ${chamSurvivors} 人 ｜ 藍白拖獵人: ${hunterCount} 人`;
-    }
-
-    // Build Leaderboard
-    const allScores = [
-      { name: `${this.myAvatar.name} (你)`, role: this.myAvatar.role, score: Math.round(this.myScore) }
-    ];
-    for (const [, p] of this.otherPlayers.entries()) {
-      allScores.push({
-        name: p.name,
-        role: p.role,
-        score: Math.round(p.score + (p.role === 'chameleon' ? 100 : 45))
-      });
-    }
-    allScores.sort((a, b) => b.score - a.score);
-
-    const lbEl = document.getElementById('leaderboard-list');
-    if (lbEl) {
-      lbEl.innerHTML = '';
-      allScores.forEach((item, idx) => {
-        const row = document.createElement('div');
-        row.className = 'lb-row';
-        const badge = item.role === 'hunter' ? '🩴 藍白拖鬼' : '🦎 倖存變色龍';
-        row.innerHTML = `
-          <span>#${idx + 1} ${item.name} <small>(${badge})</small></span>
-          <span>${item.score} 分</span>
-        `;
-        lbEl.appendChild(row);
-      });
-    }
-  }
-
-  returnToLobby() {
-    this.screenState = 'lobby';
-    this.otherPlayers.forEach((p) => this.scene.remove(p.avatar.root));
-    this.otherPlayers.clear();
-    this.myAvatar.setRole('chameleon');
-    this.myAvatar.resetToPureWhite();
-    this.positionAvatarForLobby();
-    this.switchScreen('lobby');
-  }
-
-  positionAvatarForLobby() {
-    this.myPos.set(0, 0, 12);
-    this.myRotY = 0;
-    this.myAvatar.root.position.copy(this.myPos);
-    this.myAvatar.root.rotation.y = 0;
-  }
-
-  // ==================== CONTROLS (JOYSTICK + CAMERA ORBIT + KEYBOARD) ====================
-  setupControls() {
-    // Virtual Joystick
-    const joyZone = document.getElementById('joystick-zone');
-    const joyKnob = document.getElementById('joystick-knob');
-    let joyPointerId = null;
-    let joyCenter = { x: 0, y: 0 };
-
-    joyZone?.addEventListener('pointerdown', (e) => {
-      e.stopPropagation();
-      joyPointerId = e.pointerId;
-      const rect = joyZone.getBoundingClientRect();
-      joyCenter = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
-      joyZone.setPointerCapture(e.pointerId);
-    });
-
-    joyZone?.addEventListener('pointermove', (e) => {
-      if (e.pointerId !== joyPointerId) return;
-      const dx = e.clientX - joyCenter.x;
-      const dy = e.clientY - joyCenter.y;
-      const maxR = 42;
-      const dist = Math.min(maxR, Math.hypot(dx, dy));
-      const angle = Math.atan2(dy, dx);
-      const kx = Math.cos(angle) * dist;
-      const ky = Math.sin(angle) * dist;
-      if (joyKnob) {
-        joyKnob.style.transform = `translate(${kx}px, ${ky}px)`;
-      }
-      this.joyVec.x = kx / maxR;
-      this.joyVec.y = ky / maxR;
-    });
-
-    const resetJoy = (e) => {
-      if (e && e.pointerId !== joyPointerId) return;
-      joyPointerId = null;
-      if (joyKnob) joyKnob.style.transform = 'translate(0px, 0px)';
-      this.joyVec.x = 0;
-      this.joyVec.y = 0;
-    };
-    joyZone?.addEventListener('pointerup', resetJoy);
-    joyZone?.addEventListener('pointercancel', resetJoy);
-
-    // Camera Drag & Tap-to-Pick Color on Canvas
-    let camPointerId = null;
-    let downX = 0;
-    let downY = 0;
-    let lastX = 0;
-    let lastY = 0;
-    let movedDist = 0;
-
-    this.canvas.addEventListener('pointerdown', (e) => {
-      camPointerId = e.pointerId;
-      downX = lastX = e.clientX;
-      downY = lastY = e.clientY;
-      movedDist = 0;
-    });
-
-    window.addEventListener('pointermove', (e) => {
-      if (e.pointerId !== camPointerId) return;
-      const dx = e.clientX - lastX;
-      const dy = e.clientY - lastY;
-      movedDist += Math.hypot(dx, dy);
-      lastX = e.clientX;
-      lastY = e.clientY;
-
-      this.camYaw -= dx * 0.0075;
-      this.camPitch = Math.max(0.12, Math.min(1.25, this.camPitch + dy * 0.006));
-    });
-
-    window.addEventListener('pointerup', (e) => {
-      if (e.pointerId !== camPointerId) return;
-      camPointerId = null;
-      if (movedDist < 10) {
-        // Short tap on 3D canvas -> Sample color directly from tapped object!
-        this.trySampleColorFromScreenTap(downX, downY);
-      }
-    });
-
-    // Keyboard Support (WASD + Space + E + Q)
-    window.addEventListener('keydown', (e) => {
-      this.keys[e.code] = true;
-      if (this.screenState !== 'playing') return;
-      if (e.code === 'Space') this.triggerJump();
-      if (e.code === 'KeyE') {
-        if (this.myAvatar.role === 'hunter') this.triggerHunterSlipperAttack();
-        else this.triggerSurroundingsAutoCamo();
-      }
-      if (e.code === 'KeyF' && this.myAvatar.role === 'chameleon') {
-        this.togglePositionLock(!this.isPositionLocked);
-      }
-      if (e.code === 'KeyQ' && this.myAvatar.role === 'chameleon') {
-        this.triggerTaunt(true);
-      }
-    });
-
-    window.addEventListener('keyup', (e) => {
-      this.keys[e.code] = false;
-    });
-  }
-
-  // ==================== MAIN UPDATE LOOP ====================
-  animate(now) {
-    requestAnimationFrame((t) => this.animate(t));
-    const dt = Math.min(0.1, (now - this.lastTime) / 1000);
-    this.lastTime = now;
-
-    if (this.screenState === 'lobby') {
-      this.myAvatar.root.rotation.y += dt * 0.65;
-      this.camera.position.set(0, 3.2, 16.5);
-      this.camera.lookAt(0, 1.4, 8);
-      this.renderer.render(this.scene, this.camera);
-      return;
-    }
-
-    if (this.screenState === 'playing') {
-      this.updateMatchTimers(dt);
-      this.updateLocalPlayer(dt);
-      this.updateAIBots(dt);
-      this.updateRemotePlayers(dt);
-      this.updateSmokeEffects(dt);
-      this.world.update(dt, this.phase === 'hunt' && this.phaseTimer <= 90);
-    }
-
-    this.renderer.render(this.scene, this.camera);
-  }
-
-  updateMatchTimers(dt) {
-    this.phaseTimer -= dt;
-    if (this.phase === 'hide' && this.phaseTimer <= 0) {
-      this.enterHuntPhase();
-    } else if (this.phase === 'hunt' && this.phaseTimer <= 0) {
-      this.finishRound('time_up');
-      return;
-    }
-
-    // Format MM:SS
-    const secLeft = Math.max(0, Math.ceil(this.phaseTimer));
-    const mm = String(Math.floor(secLeft / 60)).padStart(2, '0');
-    const ss = String(secLeft % 60).padStart(2, '0');
-
-    const phaseLabel = document.getElementById('hud-phase-label');
-    const timerDigits = document.getElementById('hud-timer');
-    if (phaseLabel) {
-      phaseLabel.textContent = this.phase === 'hide' ? '🙈 躲藏準備期' : '🩴 追捕倒數';
-    }
-    if (timerDigits) {
-      timerDigits.textContent = `${mm}:${ss}`;
-    }
-
-    // Update alive counts
-    let chamCount = this.myAvatar.role === 'chameleon' ? 1 : 0;
-    let huntCount = this.myAvatar.role === 'hunter' ? 1 : 0;
-    for (const [, p] of this.otherPlayers.entries()) {
-      if (p.role === 'chameleon') chamCount++;
-      else huntCount++;
-    }
-    const chamEl = document.getElementById('hud-cham-count');
-    const huntEl = document.getElementById('hud-hunt-count');
-    if (chamEl) chamEl.textContent = `🦎 剩餘: ${chamCount}`;
-    if (huntEl) huntEl.textContent = `🩴 鬼: ${huntCount}`;
-
-    // Cooldowns & Survival Points
-    if (this.myAvatar.role === 'chameleon' && this.phase === 'hunt') {
-      this.myScore += dt * 1.2;
-      this.autoTauntTimer -= dt;
-      if (this.autoTauntTimer <= 0) {
-        this.autoTauntTimer = 30;
-        this.triggerTaunt(false);
-      }
-    }
-
-    if (this.tauntCooldown > 0) {
-      this.tauntCooldown = Math.max(0, this.tauntCooldown - dt);
-      const tEl = document.getElementById('taunt-cd');
-      if (tEl) tEl.textContent = this.tauntCooldown > 0 ? `${Math.ceil(this.tauntCooldown)}s` : '+30分';
-    }
-
-    if (this.radarCooldown > 0) {
-      this.radarCooldown = Math.max(0, this.radarCooldown - dt);
-      const rEl = document.getElementById('radar-cd');
-      if (rEl) rEl.textContent = this.radarCooldown > 0 ? `${Math.ceil(this.radarCooldown)}s` : '就緒';
-    }
-
-    // Hunter Attack & 4s Wrong-Hit Penalty UI
-    if (this.attackCooldown > 0) {
-      this.attackCooldown = Math.max(0, this.attackCooldown - dt);
-    }
-    if (this.penaltyTimer > 0) {
-      this.penaltyTimer = Math.max(0, this.penaltyTimer - dt);
-    }
-
-    const penaltyWrap = document.getElementById('hud-penalty-bar-wrap');
-    const penaltyText = document.getElementById('hud-penalty-text');
-    const penaltyFill = document.getElementById('hud-penalty-fill');
-    const slipperBtn = document.getElementById('btn-slipper-attack');
-    const slipperTitle = document.getElementById('slipper-btn-title');
-    const slipperSub = document.getElementById('slipper-btn-sub');
-
-    if (this.penaltyTimer > 0) {
-      penaltyWrap?.classList.remove('hidden');
-      if (penaltyText) penaltyText.textContent = `⚡ 敲錯真物件！手麻撿拖鞋硬直中 (${this.penaltyTimer.toFixed(1)}s)`;
-      if (penaltyFill) penaltyFill.style.width = `${(this.penaltyTimer / 4.0) * 100}%`;
-      slipperBtn?.classList.add('cooldown');
-      if (slipperTitle) slipperTitle.textContent = `手麻硬直 ${this.penaltyTimer.toFixed(1)}s`;
-      if (slipperSub) slipperSub.textContent = '打到真物件罰站中...';
-    } else {
-      penaltyWrap?.classList.add('hidden');
-      if (this.attackCooldown > 0) {
-        slipperBtn?.classList.add('cooldown');
-        if (slipperTitle) slipperTitle.textContent = `收手冷卻 ${this.attackCooldown.toFixed(1)}s`;
-        if (slipperSub) slipperSub.textContent = '準備下一次揮擊';
-      } else {
-        slipperBtn?.classList.remove('cooldown');
-        if (slipperTitle) slipperTitle.textContent = '藍白拖敲打！';
-        if (slipperSub) slipperSub.textContent = '敲錯真物罰站 4 秒';
-      }
-    }
-  }
-
-  updateLocalPlayer(dt) {
-    // Combine Joystick + Keyboard input
-    let ix = this.joyVec.x;
-    let iy = this.joyVec.y;
-    if (this.keys['KeyA'] || this.keys['ArrowLeft']) ix -= 1;
-    if (this.keys['KeyD'] || this.keys['ArrowRight']) ix += 1;
-    if (this.keys['KeyW'] || this.keys['ArrowUp']) iy -= 1;
-    if (this.keys['KeyS'] || this.keys['ArrowDown']) iy += 1;
-
-    const mag = Math.hypot(ix, iy);
-    const hasMoveInput = mag > 0.08 && !this.isPositionLocked;
-
-    if (this.bobaSpeedTimer > 0) {
-      this.bobaSpeedTimer = Math.max(0, this.bobaSpeedTimer - dt);
-    }
-
-    let speed = this.myAvatar.role === 'hunter' ? 6.8 : 6.0;
-    if (this.bobaSpeedTimer > 0) speed *= 1.45;
-    if (this.penaltyTimer > 0) speed *= 0.42; // Slowed down when hand is numb from hitting wrong prop!
-
-    if (hasMoveInput) {
-      const moveAngle = Math.atan2(ix, iy) + this.camYaw;
-      const step = Math.min(1, mag) * speed * dt;
-      this.myPos.x += Math.sin(moveAngle) * step;
-      this.myPos.z += Math.cos(moveAngle) * step;
-      this.myRotY = moveAngle;
-    }
-
-    // Resolve horizontal collision with container maze walls & pillars
-    const resolved = this.world.resolveHorizontalCollision(this.myPos.x, this.myPos.y, this.myPos.z, 0.38);
-    this.myPos.x = resolved.x;
-    this.myPos.z = resolved.z;
-
-    // Keep Hunter inside Metro Exit 4 Gate during 90s Hide Phase
-    if (this.myAvatar.role === 'hunter' && this.phase === 'hide') {
-      this.myPos.x = Math.max(-3.2, Math.min(3.2, this.myPos.x));
-      this.myPos.z = Math.max(26.8, Math.min(31.2, this.myPos.z));
-    } else {
-      this.myPos.x = Math.max(-38, Math.min(38, this.myPos.x));
-      this.myPos.z = Math.max(-28, Math.min(31, this.myPos.z));
-    }
-
-    // Multi-Level Surface Elevation (2F Skybridge, Escalator Ramps, Container Roofs, Claw Machines, Moving Bus!)
-    const targetGroundY = this.world.getSurfaceHeightAt(this.myPos.x, this.myPos.z, this.myPos.y);
-
-    if (!this.isGrounded) {
-      this.myPos.y += this.myVelY * dt;
-      this.myVelY -= 19.5 * dt;
-      if (this.myPos.y <= targetGroundY) {
-        this.myPos.y = targetGroundY;
-        this.myVelY = 0;
-        this.isGrounded = true;
-      }
-    } else {
-      // Smoothly step up ramps or fall off ledges
-      if (targetGroundY >= this.myPos.y - 0.5) {
-        this.myPos.y += (targetGroundY - this.myPos.y) * Math.min(1, dt * 16);
-      } else {
-        this.isGrounded = false;
-        this.myVelY = 0;
-      }
-    }
-
-    this.myAvatar.root.position.copy(this.myPos);
-    this.myAvatar.root.rotation.y = this.myRotY;
-    this.myAvatar.update(dt, hasMoveInput);
-
-    // Update 3rd-Person Orbit Camera
-    const camX = this.myPos.x + Math.sin(this.camYaw) * Math.cos(this.camPitch) * this.camDist;
-    const camY = this.myPos.y + 1.4 + Math.sin(this.camPitch) * this.camDist;
-    const camZ = this.myPos.z + Math.cos(this.camYaw) * Math.cos(this.camPitch) * this.camDist;
-    this.camera.position.set(camX, Math.max(0.6, camY), camZ);
-    this.camera.lookAt(this.myPos.x, this.myPos.y + 1.15, this.myPos.z);
-
-    // Broadcast state at ~15Hz
-    this.netSyncAccum = (this.netSyncAccum || 0) + dt;
-    if (this.netSyncAccum >= 0.066) {
-      this.netSyncAccum = 0;
-      this.net.sendState({
-        name: this.myAvatar.name,
-        x: Number(this.myPos.x.toFixed(2)),
-        y: Number(this.myPos.y.toFixed(2)),
-        z: Number(this.myPos.z.toFixed(2)),
-        rotY: Number(this.myRotY.toFixed(2)),
-        role: this.myAvatar.role,
-        score: Math.round(this.myScore),
-        appearance: this.myAvatar.serializeAppearance()
-      });
-    }
-  }
-
-  updateRemotePlayers(dt) {
-    for (const [, p] of this.otherPlayers.entries()) {
-      if (p.isBot) continue;
-      p.avatar.root.position.lerp(new THREE.Vector3(p.x, p.y, p.z), Math.min(1, dt * 12));
-      p.avatar.root.rotation.y = p.rotY;
-      p.avatar.update(dt, false);
-      if (p.avatar.nameSprite) {
-        p.avatar.nameSprite.visible = !(this.myAvatar.role === 'hunter' && p.role === 'chameleon');
-      }
-    }
-  }
-
-  updateSmokeEffects(dt) {
-    for (let i = this.smokeClouds.length - 1; i >= 0; i--) {
-      const s = this.smokeClouds[i];
-      s.timer -= dt;
-      if (s.isBurst) {
-        s.mesh.scale.addScalar(dt * 3.5);
-      }
-      if (s.timer <= 0) {
-        this.scene.remove(s.mesh);
-        this.smokeClouds.splice(i, 1);
-      }
-    }
-  }
-
-  // ==================== UI HELPERS ====================
-  switchScreen(screenName) {
-    document.querySelectorAll('.screen').forEach((s) => s.classList.remove('active'));
-    document.getElementById(`${screenName}-screen`)?.classList.add('active');
-    this.screenState = screenName === 'hud' ? 'playing' : screenName;
-  }
-
-  showToast(text, isError = false) {
-    const el = document.getElementById('global-toast');
-    if (!el) return;
-    el.textContent = text;
-    el.style.background = isError
-      ? 'linear-gradient(135deg, #dc2626, #b91c1c)'
-      : 'linear-gradient(135deg, #059669, #10b981)';
-    el.classList.remove('hidden');
-    clearTimeout(this.toastTimeout);
-    this.toastTimeout = setTimeout(() => el.classList.add('hidden'), 3200);
-  }
-
-  showCenterBanner(text, duration = 3000) {
-    const el = document.getElementById('center-banner');
-    if (!el) return;
-    el.innerText = text;
-    el.classList.remove('hidden');
-    clearTimeout(this.bannerTimeout);
-    this.bannerTimeout = setTimeout(() => el.classList.add('hidden'), duration);
-  }
-
-  addEventFeed(text) {
-    const feed = document.getElementById('event-feed');
-    if (!feed) return;
-    const item = document.createElement('div');
-    item.className = 'feed-item';
-    item.textContent = text;
-    feed.appendChild(item);
-    setTimeout(() => {
-      item.remove();
-    }, 4500);
-  }
-
-  onResize() {
-    this.camera.aspect = window.innerWidth / window.innerHeight;
-    this.camera.updateProjectionMatrix();
-    this.renderer.setSize(window.innerWidth, window.innerHeight);
+  let aliveCount = 0;
+  players.forEach((p) => {
+    if (!p.isGhost) aliveCount++;
+  });
+  document.getElementById('hud-alive-count').textContent = `👑 存活: ${aliveCount}/${players.size}`;
+
+  // Toggle Alive vs Ghost Controls
+  const aliveCluster = document.getElementById('alive-actions');
+  const ghostCluster = document.getElementById('ghost-actions');
+  const ghostBanner = document.getElementById('ghost-mode-banner');
+
+  if (localPlayer.isGhost) {
+    aliveCluster.classList.add('hidden');
+    ghostCluster.classList.remove('hidden');
+    ghostBanner.classList.remove('hidden');
+  } else {
+    aliveCluster.classList.remove('hidden');
+    ghostCluster.classList.add('hidden');
+    ghostBanner.classList.add('hidden');
   }
 }
 
-window.addEventListener('DOMContentLoaded', () => {
-  window.gameApp = new TaiwanChameleonGame();
+function updateItemButtonUI() {
+  const btn = document.getElementById('btn-use-item');
+  const iconEl = document.getElementById('item-btn-icon');
+  const nameEl = document.getElementById('item-btn-name');
+  const subEl = document.getElementById('item-btn-sub');
+
+  if (!localPlayer || !localPlayer.heldItem) {
+    btn.classList.add('empty');
+    btn.disabled = true;
+    iconEl.textContent = '🎁';
+    nameEl.textContent = '無道具';
+    subEl.textContent = '踩問號箱拾取';
+    return;
+  }
+
+  const meta = ITEM_META[localPlayer.heldItem] || { icon: '🎁', name: '神秘道具' };
+  btn.classList.remove('empty');
+  btn.disabled = false;
+  iconEl.textContent = meta.icon;
+  nameEl.textContent = meta.name;
+  subEl.textContent = '點擊立即害人！';
+}
+
+// ================= PVP & SABOTAGE ACTIONS =================
+function performJump(p) {
+  if (!p || p.isGhost || p.avatar.frozenTimer > 0) return;
+  if (p.isGrounded) {
+    p.vy = 9.2;
+    p.isGrounded = false;
+    if (p.isLocal) sfx.jump();
+  }
+}
+
+function performShove(attacker) {
+  if (!attacker || attacker.isGhost || attacker.avatar.frozenTimer > 0) return;
+  attacker.avatar.punchAnimTimer = 0.32;
+  if (attacker.isLocal) sfx.shovePunch();
+
+  players.forEach((victim) => {
+    if (victim.id === attacker.id || victim.isGhost) return;
+    const dx = victim.x - attacker.x;
+    const dy = victim.y - attacker.y;
+    const dz = victim.z - attacker.z;
+    const distXZ = Math.hypot(dx, dz);
+
+    if (distXZ < 2.35 && Math.abs(dy) < 1.8) {
+      const angle = Math.atan2(dz, dx);
+      victim.vx += Math.cos(angle) * 10.5;
+      victim.vz += Math.sin(angle) * 10.5;
+      victim.vy = Math.max(victim.vy, 4.8);
+      victim.isGrounded = false;
+      victim.lastAttackerId = attacker.id;
+      addEventFeed(`🥊 ${attacker.name} 狠推了 ${victim.name} 一把！`);
+    }
+  });
+}
+
+function useHeldItem(user) {
+  if (!user || user.isGhost || !user.heldItem) return;
+  const itemType = user.heldItem;
+  user.heldItem = null;
+  user.avatar.heldItem = null;
+  user.avatar.refreshOverheadLabel();
+  if (user.isLocal) updateItemButtonUI();
+
+  network.sendAction('use_item', {
+    itemType,
+    x: user.x,
+    y: user.y,
+    z: user.z
+  });
+
+  executeItemEffect(user, itemType, user.x, user.y, user.z);
+}
+
+function executeItemEffect(user, itemType, x, y, z) {
+  if (itemType === 'banana') {
+    sfx.customizePop();
+    world.spawnBananaHazard(x, y, z, user.id);
+    addEventFeed(`🍌 ${user.name} 在踏板上丟了香蕉皮！`);
+  } else if (itemType === 'glove') {
+    sfx.shovePunch();
+    user.avatar.punchAnimTimer = 0.45;
+    players.forEach((v) => {
+      if (v.id === user.id || v.isGhost) return;
+      const dist = Math.hypot(v.x - x, v.z - z);
+      if (dist < 4.2 && Math.abs(v.y - y) < 2.5) {
+        const ang = Math.atan2(v.z - z, v.x - x);
+        v.vx += Math.cos(ang) * 16.5;
+        v.vz += Math.sin(ang) * 16.5;
+        v.vy = 7.2;
+        v.isGrounded = false;
+        v.lastAttackerId = user.id;
+      }
+    });
+    addEventFeed(`🥊 ${user.name} 揮出彈簧重拳轟飛對手！`);
+  } else if (itemType === 'bomb') {
+    sfx.switchTrigger();
+    // Attach time bomb to nearest alive rival, or self if nobody left
+    let nearest = null;
+    let bestD = Infinity;
+    players.forEach((v) => {
+      if (v.id !== user.id && !v.isGhost) {
+        const d = Math.hypot(v.x - x, v.y - y, v.z - z);
+        if (d < bestD) {
+          bestD = d;
+          nearest = v;
+        }
+      }
+    });
+    const target = nearest || user;
+    target.hasBomb = true;
+    target.bombTimer = 4.2;
+    target.bombPassImmunity = 0.6;
+    target.avatar.hasBomb = true;
+    target.avatar.refreshOverheadLabel();
+    addEventFeed(`💣 ${user.name} 把定時炸彈塞給了 ${target.name}！`);
+  } else if (itemType === 'freeze') {
+    sfx.freezeRay();
+    players.forEach((v) => {
+      if (v.id !== user.id && !v.isGhost) {
+        const d = Math.hypot(v.x - x, v.y - y, v.z - z);
+        if (d < 6.5) {
+          v.avatar.frozenTimer = 2.0;
+          v.vx *= 0.2;
+          v.vz *= 0.2;
+        }
+      }
+    });
+    addEventFeed(`❄️ ${user.name} 發射急凍光線凍結了周圍對手！`);
+  } else if (itemType === 'swap') {
+    const candidates = [];
+    players.forEach((v) => {
+      if (v.id !== user.id && !v.isGhost) candidates.push(v);
+    });
+    if (candidates.length > 0) {
+      sfx.swapTeleport();
+      const target = candidates[Math.floor(Math.random() * candidates.length)];
+      const tx = target.x, ty = target.y, tz = target.z;
+      target.x = user.x; target.y = user.y; target.z = user.z;
+      user.x = tx; user.y = ty + 0.4; user.z = tz;
+      user.vy = Math.max(0, user.vy);
+      addEventFeed(`🔀 ${user.name} 發動抓交替，與 ${target.name} 瞬間換位！`);
+    }
+  }
+}
+
+function handleIncomingAction(playerId, action, payload) {
+  const actor = players.get(playerId);
+  if (!actor) return;
+
+  if (action === 'shove') {
+    performShove(actor);
+  } else if (action === 'use_item') {
+    executeItemEffect(actor, payload.itemType, payload.x, payload.y, payload.z);
+  } else if (action === 'trigger_switch') {
+    activateFieldSwitch(actor, payload.switchType);
+  } else if (action === 'ghost_curse') {
+    const newType = payload.newType || 'spike';
+    world.cursePlatform(payload.floorKey, newType);
+    sfx.ghostCurse();
+    addEventFeed(`👻 背後靈 ${actor.name} 將踏板詛咒成危險機關！`);
+  } else if (action === 'ghost_rock') {
+    sfx.switchTrigger();
+    world.triggerRockfall(world.ceilingY);
+    addEventFeed(`☄️ 背後靈 ${actor.name} 召喚了深淵落石雨！`);
+  }
+}
+
+function activateFieldSwitch(actor, switchType) {
+  sfx.switchTrigger();
+  const pill = document.getElementById('hud-field-event');
+  pill.classList.remove('hidden');
+
+  if (switchType === 'speed_up') {
+    world.speedBoostTimer = 5.5;
+    pill.textContent = '⚡ 全場下墜加速中！';
+    addEventFeed(`⚡ ${actor.name} 踩下全場加速開關！`);
+  } else if (switchType === 'reverse_belt') {
+    world.conveyorReversed = !world.conveyorReversed;
+    pill.textContent = '🔄 輸送帶方向大逆轉！';
+    addEventFeed(`🔄 ${actor.name} 逆轉了所有輸送帶方向！`);
+  } else if (switchType === 'rockfall') {
+    world.triggerRockfall(world.ceilingY);
+    pill.textContent = '☄️ 警告：天降熔岩落石！';
+    addEventFeed(`☄️ ${actor.name} 啟動了天降落石機關！`);
+  }
+
+  clearTimeout(activateFieldSwitch._t);
+  activateFieldSwitch._t = setTimeout(() => {
+    pill.classList.add('hidden');
+  }, 5000);
+}
+
+// ================= MOBILE FLOATING JOYSTICK & MULTI-TOUCH =================
+const joyZone = document.getElementById('joystick-zone');
+const joyBase = document.getElementById('joystick-base');
+const joyKnob = document.getElementById('joystick-knob');
+let activeJoyPointerId = null;
+let joyCenterX = 0;
+let joyCenterY = 0;
+const maxJoyRadius = 44;
+
+joyZone.addEventListener('pointerdown', (e) => {
+  if (activeJoyPointerId !== null) return;
+  activeJoyPointerId = e.pointerId;
+  joyZone.setPointerCapture(e.pointerId);
+
+  const rect = joyZone.getBoundingClientRect();
+  joyCenterX = e.clientX;
+  joyCenterY = e.clientY;
+
+  // Move visual joystick base directly under the player's thumb!
+  const localLeft = Math.max(8, Math.min(rect.width - 126, e.clientX - rect.left - 59));
+  const localBottom = Math.max(8, Math.min(rect.height - 126, rect.bottom - e.clientY - 59));
+  joyBase.style.left = `${localLeft}px`;
+  joyBase.style.bottom = `${localBottom}px`;
+  joyKnob.style.transform = `translate(0px, 0px)`;
+  joyX = 0;
+  joyY = 0;
+});
+
+joyZone.addEventListener('pointermove', (e) => {
+  if (e.pointerId !== activeJoyPointerId) return;
+  const dx = e.clientX - joyCenterX;
+  const dy = e.clientY - joyCenterY;
+  const dist = Math.hypot(dx, dy);
+  const clamped = Math.min(dist, maxJoyRadius);
+  const angle = Math.atan2(dy, dx);
+
+  const kx = Math.cos(angle) * clamped;
+  const ky = Math.sin(angle) * clamped;
+  joyKnob.style.transform = `translate(${kx}px, ${ky}px)`;
+
+  joyX = kx / maxJoyRadius;
+  joyY = ky / maxJoyRadius;
+});
+
+function releaseJoystick(e) {
+  if (e.pointerId !== activeJoyPointerId) return;
+  activeJoyPointerId = null;
+  joyX = 0;
+  joyY = 0;
+  joyKnob.style.transform = `translate(0px, 0px)`;
+  joyBase.style.left = `14px`;
+  joyBase.style.bottom = `22px`;
+}
+joyZone.addEventListener('pointerup', releaseJoystick);
+joyZone.addEventListener('pointercancel', releaseJoystick);
+
+// Right-side Multi-Touch Action Buttons
+document.getElementById('btn-jump').addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  if (localPlayer) performJump(localPlayer);
+});
+
+document.getElementById('btn-shove').addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  if (!localPlayer || localPlayer.isGhost || shoveCooldown > 0) return;
+  shoveCooldown = 1.4;
+  performShove(localPlayer);
+  network.sendAction('shove', {});
+});
+
+document.getElementById('btn-use-item').addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  if (localPlayer && localPlayer.heldItem) {
+    useHeldItem(localPlayer);
+  }
+});
+
+// Ghost Revenge Buttons
+document.getElementById('btn-ghost-curse').addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  if (!localPlayer || !localPlayer.isGhost || ghostCurseCooldown > 0) return;
+  // Find closest safe platform near localGhost
+  let bestKey = null;
+  let bestDist = Infinity;
+  for (const [k, p] of world.platforms.entries()) {
+    if (!p.isBroken && (p.type === 'normal' || p.type === 'conveyor_left' || p.type === 'conveyor_right')) {
+      const d = Math.hypot(p.x - localPlayer.x, p.y - localPlayer.y, p.z - localPlayer.z);
+      if (d < bestDist) {
+        bestDist = d;
+        bestKey = k;
+      }
+    }
+  }
+  if (bestKey !== null) {
+    ghostCurseCooldown = 4.5;
+    const newType = Math.random() < 0.5 ? 'spike' : 'cracked';
+    world.cursePlatform(bestKey, newType);
+    sfx.ghostCurse();
+    addEventFeed(`👻 你詛咒了第 B${Math.floor(bestKey)} 層踏板！`);
+    network.sendAction('ghost_curse', { floorKey: bestKey, newType });
+  }
+});
+
+document.getElementById('btn-ghost-rock').addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  if (!localPlayer || !localPlayer.isGhost || ghostRockCooldown > 0) return;
+  ghostRockCooldown = 7.0;
+  sfx.switchTrigger();
+  world.triggerRockfall(world.ceilingY);
+  addEventFeed(`☄️ 你召喚了深淵落石雨！`);
+  network.sendAction('ghost_rock', {});
+});
+
+document.getElementById('btn-ghost-dash').addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  if (!localPlayer || !localPlayer.isGhost) return;
+  // Teleport ghost directly to a random alive survivor to harass them!
+  const survivors = [];
+  players.forEach((p) => {
+    if (!p.isGhost) survivors.push(p);
+  });
+  if (survivors.length > 0) {
+    const target = survivors[Math.floor(Math.random() * survivors.length)];
+    localPlayer.x = target.x + (Math.random() - 0.5) * 2;
+    localPlayer.y = target.y + 1.0;
+    localPlayer.z = target.z;
+    sfx.swapTeleport();
+  }
+});
+
+// Camera Mode Toggle
+document.getElementById('btn-cam-mode').addEventListener('click', (e) => {
+  cameraCloseMode = !cameraCloseMode;
+  e.currentTarget.textContent = cameraCloseMode ? '🎥 近距視角' : '🎥 俯視視角';
+});
+
+// Keyboard support for PC players
+window.addEventListener('keydown', (e) => {
+  keys[e.code] = true;
+  if (gameState !== 'playing' || !localPlayer) return;
+  if (e.code === 'Space') {
+    performJump(localPlayer);
+  } else if (e.code === 'KeyF' || e.code === 'KeyQ') {
+    if (shoveCooldown <= 0 && !localPlayer.isGhost) {
+      shoveCooldown = 1.4;
+      performShove(localPlayer);
+      network.sendAction('shove', {});
+    }
+  } else if (e.code === 'KeyE' || e.code === 'Enter') {
+    if (localPlayer.heldItem) useHeldItem(localPlayer);
+  }
+});
+window.addEventListener('keyup', (e) => {
+  keys[e.code] = false;
+});
+
+// ================= PHYSICS & BOT AI LOOP =================
+function damagePlayer(p, amount, reasonText) {
+  if (p.isGhost) return;
+  p.hp = Math.max(0, p.hp - amount);
+  p.avatar.hp = p.hp;
+  p.avatar.refreshOverheadLabel();
+  if (p.isLocal) updateHudUI();
+
+  if (p.hp <= 0) {
+    eliminatePlayer(p, reasonText || `💀 ${p.name} 體力耗盡倒下了！`);
+  }
+}
+
+function eliminatePlayer(p, message) {
+  if (p.isGhost) return;
+  p.hp = 0;
+  p.hasBomb = false;
+  p.avatar.hasBomb = false;
+  p.isGhost = true;
+  p.avatar.setGhostMode(true);
+
+  let remainingAlive = 0;
+  players.forEach((other) => {
+    if (!other.isGhost) remainingAlive++;
+  });
+  p.survivalOrder = remainingAlive + 1;
+
+  if (p.lastAttackerId && players.has(p.lastAttackerId)) {
+    players.get(p.lastAttackerId).kills++;
+  }
+
+  sfx.fallEliminated();
+  addEventFeed(message);
+  if (p.isLocal) {
+    showCenterBanner('👻 你變成了背後靈！用右下技能繼續害人！', 2500);
+  }
+  updateHudUI();
+  checkMatchEndCondition();
+}
+
+function checkMatchEndCondition() {
+  if (gameState !== 'playing') return;
+  const aliveList = [];
+  players.forEach((p) => {
+    if (!p.isGhost) aliveList.push(p);
+  });
+
+  // End match when 1 survivor left (or 0 if single player died)
+  if ((players.size > 1 && aliveList.length <= 1) || aliveList.length === 0) {
+    if (aliveList.length === 1) {
+      aliveList[0].survivalOrder = 1;
+    }
+    finishMatch(aliveList[0] || localPlayer);
+  }
+}
+
+function finishMatch(winner) {
+  if (gameState === 'result') return;
+  gameState = 'result';
+  sfx.win();
+
+  const titleEl = document.getElementById('result-title');
+  const subEl = document.getElementById('result-subtitle');
+  const listEl = document.getElementById('leaderboard-list');
+
+  titleEl.textContent = winner ? `🏆 冠軍：${winner.name}！` : '🏁 回合結束！';
+
+  const sorted = Array.from(players.values()).sort((a, b) => {
+    const rankA = a.isGhost ? a.survivalOrder : 1;
+    const rankB = b.isGhost ? b.survivalOrder : 1;
+    if (rankA !== rankB) return rankA - rankB;
+    return b.maxFloor - a.maxFloor;
+  });
+
+  const deepest = Math.max(...sorted.map((p) => p.maxFloor), 1);
+  subEl.textContent = `本局最深紀錄：地下 B${String(deepest).padStart(3, '0')} 層`;
+
+  listEl.innerHTML = '';
+  sorted.forEach((p, idx) => {
+    const row = document.createElement('div');
+    row.className = 'leader-row' + (idx === 0 ? ' winner' : '');
+    const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${idx + 1}`;
+    row.innerHTML = `
+      <span>${medal} ${p.name}${p.isLocal ? ' (你)' : ''}</span>
+      <span>🌊 B${String(p.maxFloor).padStart(3, '0')}層 ｜ 💥 害人 ${p.kills}</span>
+    `;
+    listEl.appendChild(row);
+  });
+
+  switchScreen('result-screen');
+}
+
+document.getElementById('btn-back-lobby').addEventListener('click', () => {
+  sfx.customizePop();
+  gameState = 'lobby';
+  world.root.visible = false;
+  lobbyStageGroup.visible = true;
+  players.forEach((p) => scene.remove(p.avatar.group));
+  players.clear();
+  switchScreen('lobby-screen');
+});
+
+function updateBotInput(bot, dt) {
+  bot.botThinkTimer -= dt;
+  if (bot.botThinkTimer <= 0) {
+    bot.botThinkTimer = 0.28 + Math.random() * 0.25;
+
+    // Look for a safe platform below or near current Y
+    let bestPlat = null;
+    let bestScore = Infinity;
+    for (const [, plat] of world.platforms.entries()) {
+      if (plat.isBroken) continue;
+      const dy = bot.y - plat.y;
+      if (dy >= -0.8 && dy < 7.5) {
+        const dist = Math.hypot(plat.x - bot.x, plat.z - bot.z);
+        const hazardPenalty = plat.type === 'spike' ? 4.5 : plat.type === 'lava' ? 2.5 : 0;
+        const score = dist + hazardPenalty;
+        if (score < bestScore) {
+          bestScore = score;
+          bestPlat = plat;
+        }
+      }
+    }
+
+    if (bestPlat) {
+      // If currently standing on a platform and ceiling is close, intentionally walk off the edge to drop down!
+      const ceilingDist = world.ceilingY - bot.y;
+      if (bot.isGrounded && ceilingDist < 5.2) {
+        bot.botTargetX = bestPlat.x + (bestPlat.x > 0 ? -bestPlat.w * 0.68 : bestPlat.w * 0.68);
+        bot.botTargetZ = bestPlat.z;
+      } else {
+        bot.botTargetX = bestPlat.x + (Math.random() - 0.5) * (bestPlat.w * 0.5);
+        bot.botTargetZ = bestPlat.z + (Math.random() - 0.5) * (bestPlat.d * 0.4);
+      }
+    }
+
+    // Bots also use items & shove nearby players!
+    if (bot.heldItem && Math.random() < 0.45) {
+      useHeldItem(bot);
+    }
+    players.forEach((other) => {
+      if (other.id !== bot.id && !other.isGhost) {
+        const d = Math.hypot(other.x - bot.x, other.z - bot.z);
+        if (d < 1.8 && Math.abs(other.y - bot.y) < 1.2 && Math.random() < 0.35) {
+          performShove(bot);
+        }
+      }
+    });
+  }
+
+  const dx = bot.botTargetX - bot.x;
+  const dz = bot.botTargetZ - bot.z;
+  const len = Math.hypot(dx, dz);
+  if (len > 0.25) {
+    return { mx: dx / len, mz: dz / len };
+  }
+  return { mx: 0, mz: 0 };
+}
+
+function updatePlayerPhysics(p, dt) {
+  const isSimulatedLocally = p.isLocal || (network.isHost && p.isBot);
+
+  if (!isSimulatedLocally) {
+    // Smooth interpolation for remote multiplayer peers
+    p.x += (p.targetX - p.x) * Math.min(1, dt * 14);
+    p.y += (p.targetY - p.y) * Math.min(1, dt * 14);
+    p.z += (p.targetZ - p.z) * Math.min(1, dt * 14);
+    p.avatar.group.position.set(p.x, p.y, p.z);
+    p.avatar.group.rotation.y = p.rotY;
+    p.avatar.animate(dt, Math.hypot(p.vx, p.vz) > 0.4, true);
+    return;
+  }
+
+  // Movement Input
+  let mx = 0;
+  let mz = 0;
+  if (p.isLocal) {
+    mx = joyX;
+    mz = joyY;
+    if (keys['KeyA'] || keys['ArrowLeft']) mx -= 1;
+    if (keys['KeyD'] || keys['ArrowRight']) mx += 1;
+    if (keys['KeyW'] || keys['ArrowUp']) mz -= 1;
+    if (keys['KeyS'] || keys['ArrowDown']) mz += 1;
+    const mag = Math.hypot(mx, mz);
+    if (mag > 1) {
+      mx /= mag;
+      mz /= mag;
+    }
+  } else if (p.isBot && !p.isGhost) {
+    const bIn = updateBotInput(p, dt);
+    mx = bIn.mx;
+    mz = bIn.mz;
+  }
+
+  // Ghost free-flight mode
+  if (p.isGhost) {
+    if (p.isLocal) {
+      p.x += mx * 8.5 * dt;
+      p.z += mz * 8.5 * dt;
+      // Keep ghost vertically near the active survivors
+      let avgY = world.ceilingY - 6;
+      let cnt = 0;
+      players.forEach((other) => {
+        if (!other.isGhost) {
+          avgY += other.y;
+          cnt++;
+        }
+      });
+      if (cnt > 0) avgY = (avgY - (world.ceilingY - 6)) / cnt;
+      p.y += (avgY + 1.2 - p.y) * dt * 2.5;
+    }
+    p.x = Math.max(-7.8, Math.min(7.8, p.x));
+    p.z = Math.max(-3.8, Math.min(3.8, p.z));
+    p.avatar.group.position.set(p.x, p.y, p.z);
+    p.avatar.animate(dt, true, false);
+    return;
+  }
+
+  // Frozen check
+  if (p.avatar.frozenTimer > 0) {
+    mx = 0;
+    mz = 0;
+  }
+
+  // Check current platform surface properties (ice, conveyor)
+  let currentPlat = world.platforms.get(p.currentPlatformKey);
+  const onIce = p.isGrounded && currentPlat && currentPlat.type === 'ice';
+  const moveSpeed = 6.8;
+  const accel = onIce ? 2.6 : 14.0;
+  const friction = onIce ? 0.985 : 0.82;
+
+  if (Math.hypot(mx, mz) > 0.05) {
+    p.vx += (mx * moveSpeed - p.vx) * Math.min(1, accel * dt);
+    p.vz += (mz * moveSpeed - p.vz) * Math.min(1, accel * dt);
+    p.rotY = Math.atan2(mx, mz);
+  } else {
+    p.vx *= Math.pow(friction, dt * 60);
+    p.vz *= Math.pow(friction, dt * 60);
+  }
+
+  // Conveyor belt push
+  if (p.isGrounded && currentPlat) {
+    if (currentPlat.type === 'conveyor_left' || currentPlat.type === 'conveyor_right') {
+      const dir = (currentPlat.type === 'conveyor_right' ? 1 : -1) * (world.conveyorReversed ? -1 : 1);
+      p.x += dir * 3.4 * dt;
+    }
+  }
+
+  // Gravity
+  const prevY = p.y;
+  p.vy -= 23.5 * dt;
+  p.vy = Math.max(-19.5, p.vy);
+
+  p.x += p.vx * dt;
+  p.y += p.vy * dt;
+  p.z += p.vz * dt;
+
+  // Keep within 3D Shaft walls
+  p.x = Math.max(-8.2, Math.min(8.2, p.x));
+  p.z = Math.max(-4.1, Math.min(4.1, p.z));
+
+  // Platform Landing & Projection Scan
+  p.isGrounded = false;
+  let highestGroundBelow = null;
+
+  for (const [key, plat] of world.platforms.entries()) {
+    if (plat.isBroken) continue;
+    const halfW = plat.w * 0.5 + 0.26;
+    const halfD = plat.d * 0.5 + 0.26;
+
+    if (Math.abs(p.x - plat.x) <= halfW && Math.abs(p.z - plat.z) <= halfD) {
+      const topY = plat.y + 0.28;
+      // Track highest platform below feet for the mobile laser landing ring
+      if (topY <= prevY + 0.3 && (highestGroundBelow === null || topY > highestGroundBelow)) {
+        highestGroundBelow = topY;
+      }
+
+      // Swept landing check
+      if (p.vy <= 0 && prevY >= topY - 0.18 && p.y <= topY + 0.16) {
+        p.y = topY;
+        p.vy = 0;
+        p.isGrounded = true;
+        p.currentPlatformKey = key;
+        currentPlat = plat;
+
+        if (plat.floorIndex > p.maxFloor) {
+          p.maxFloor = plat.floorIndex;
+          if (p.isLocal) updateHudUI();
+        }
+
+        // Handle Landing Platform Traps!
+        handlePlatformLanding(p, plat);
+        break;
+      }
+    }
+  }
+
+  p.avatar.updateLandingProjection(highestGroundBelow);
+
+  // Continuous Lava & Catapult platform effects while standing
+  if (p.isGrounded && currentPlat && !currentPlat.isBroken) {
+    if (currentPlat.type === 'lava') {
+      p.lavaStandTimer += dt;
+      if (p.lavaStandTimer > 0.75) {
+        p.lavaStandTimer = 0;
+        p.vy = 8.4;
+        p.isGrounded = false;
+        if (p.isLocal) sfx.stepLava();
+        damagePlayer(p, 2, `🔥 ${p.name} 被熔岩踏板燙死！`);
+      }
+    } else if (currentPlat.type === 'catapult') {
+      currentPlat.catapultCharge += dt;
+      if (currentPlat.catapultCharge > 0.55) {
+        currentPlat.catapultCharge = 0;
+        const randAng = Math.random() * Math.PI * 2;
+        p.vx = Math.cos(randAng) * 14.0;
+        p.vz = Math.sin(randAng) * 14.0;
+        p.vy = 7.5;
+        p.isGrounded = false;
+        if (p.isLocal) sfx.stepCatapult();
+      }
+    }
+
+    // Item Box Pickup
+    if (currentPlat.hasItemBox && currentPlat.itemBoxMesh) {
+      const boxWorldX = currentPlat.x + currentPlat.itemBoxMesh.position.x;
+      const boxWorldZ = currentPlat.z + currentPlat.itemBoxMesh.position.z;
+      if (Math.hypot(p.x - boxWorldX, p.z - boxWorldZ) < 1.05) {
+        currentPlat.hasItemBox = false;
+        currentPlat.itemBoxMesh.visible = false;
+        const itemKeys = Object.keys(ITEM_META);
+        const picked = itemKeys[Math.floor(Math.random() * itemKeys.length)];
+        p.heldItem = picked;
+        p.avatar.heldItem = picked;
+        p.avatar.refreshOverheadLabel();
+        if (p.isLocal) {
+          sfx.itemPickup();
+          updateItemButtonUI();
+        }
+      }
+    }
+
+    // Field Sabotage Switch Trigger
+    if (currentPlat.switchType && currentPlat.switchCooldown <= 0) {
+      if (Math.hypot(p.x - currentPlat.x, p.z - currentPlat.z) < 0.95) {
+        currentPlat.switchCooldown = 8.0;
+        activateFieldSwitch(p, currentPlat.switchType);
+        network.sendAction('trigger_switch', { switchType: currentPlat.switchType });
+      }
+    }
+  } else {
+    p.lavaStandTimer = 0;
+  }
+
+  // Dropped Banana Hazard Check
+  for (let i = world.bananas.length - 1; i >= 0; i--) {
+    const b = world.bananas[i];
+    if (performance.now() - b.createdAt < 450 && b.ownerId === p.id) continue;
+    if (Math.hypot(p.x - b.x, p.z - b.z) < 0.85 && Math.abs(p.y - b.y) < 1.0) {
+      world.root.remove(b.mesh);
+      world.bananas.splice(i, 1);
+      sfx.bananaSlip();
+      const slipAngle = Math.random() * Math.PI * 2;
+      p.vx = Math.cos(slipAngle) * 14.5;
+      p.vz = Math.sin(slipAngle) * 14.5;
+      p.vy = 6.0;
+      p.isGrounded = false;
+      p.lastAttackerId = b.ownerId;
+      addEventFeed(`🍌 ${p.name} 踩到香蕉皮大滑倒！`);
+    }
+  }
+
+  // Falling Rock Hazard Check
+  for (let i = world.rocks.length - 1; i >= 0; i--) {
+    const r = world.rocks[i];
+    if (Math.hypot(p.x - r.x, p.z - r.z) < 1.05 && Math.abs(p.y + 0.8 - r.y) < 1.2) {
+      sfx.explosion();
+      p.vy = -8.0;
+      p.vx += (Math.random() - 0.5) * 10;
+      damagePlayer(p, 3, `☄️ ${p.name} 被天降落石砸入深淵！`);
+      world.root.remove(r.mesh);
+      world.root.remove(r.warningLine);
+      world.rocks.splice(i, 1);
+    }
+  }
+
+  // Time Bomb Countdown & Passing by Body Collision
+  if (p.hasBomb) {
+    p.bombPassImmunity = Math.max(0, p.bombPassImmunity - dt);
+    p.bombTimer -= dt;
+
+    if (p.bombPassImmunity <= 0) {
+      players.forEach((other) => {
+        if (other.id !== p.id && !other.isGhost && !other.hasBomb) {
+          if (Math.hypot(other.x - p.x, other.z - p.z) < 1.05 && Math.abs(other.y - p.y) < 1.4) {
+            // Pass the bomb!
+            p.hasBomb = false;
+            p.avatar.hasBomb = false;
+            p.avatar.refreshOverheadLabel();
+
+            other.hasBomb = true;
+            other.bombTimer = Math.max(1.8, p.bombTimer);
+            other.bombPassImmunity = 0.75;
+            other.avatar.hasBomb = true;
+            other.avatar.refreshOverheadLabel();
+            sfx.switchTrigger();
+            addEventFeed(`💣 ${p.name} 把炸彈傳染給了 ${other.name}！`);
+          }
+        }
+      });
+    }
+
+    if (p.hasBomb && p.bombTimer <= 0) {
+      p.hasBomb = false;
+      p.avatar.hasBomb = false;
+      p.avatar.refreshOverheadLabel();
+      sfx.explosion();
+      p.vy = 8.5;
+      p.vx = (Math.random() - 0.5) * 16;
+      damagePlayer(p, 4, `💥 ${p.name} 被定時炸彈炸飛淘汰！`);
+    }
+  }
+
+  // PvP Body Collision & Head Stomp Check!
+  players.forEach((other) => {
+    if (other.id === p.id || other.isGhost) return;
+    const dx = p.x - other.x;
+    const dz = p.z - other.z;
+    const distXZ = Math.hypot(dx, dz);
+    const dy = p.y - other.y;
+
+    // 1. Head Stomp (falling onto another player's head!)
+    if (p.vy < -1.0 && distXZ < 0.92 && dy >= 0.85 && dy <= 1.85) {
+      p.vy = 10.6; // Bounce high up!
+      p.isGrounded = false;
+      p.kills++;
+
+      other.avatar.squishTimer = 0.6;
+      other.vy = -9.0; // Smash victim downward!
+      other.lastAttackerId = p.id;
+      sfx.stompHead();
+      addEventFeed(`👟 ${p.name} 踩扁了 ${other.name} 的頭二段跳！`);
+      damagePlayer(other, 1, `👟 ${other.name} 被 ${p.name} 一腳踩進深淵！`);
+    }
+    // 2. Horizontal Body Bump
+    else if (distXZ < 0.78 && distXZ > 0.001 && Math.abs(dy) < 1.1) {
+      const push = (0.78 - distXZ) * 0.55;
+      const nx = dx / distXZ;
+      const nz = dz / distXZ;
+      p.x += nx * push;
+      p.z += nz * push;
+      other.x -= nx * push;
+      other.z -= nz * push;
+    }
+  });
+
+  // Spiked Ceiling Collision Check
+  if (p.y + 1.65 >= world.ceilingY - 0.4) {
+    p.y = world.ceilingY - 2.2;
+    p.vy = -7.5;
+    p.isGrounded = false;
+    if (p.isLocal) sfx.stepSpike();
+    damagePlayer(p, 4, `⚙️ ${p.name} 被頭頂尖刺天花板刺穿淘汰！`);
+  }
+
+  // Deep Abyss Fall Elimination Check
+  if (p.y < world.ceilingY - 23.5) {
+    eliminatePlayer(p, `🕳️ ${p.name} 墜入無底深淵淘汰！`);
+  }
+
+  p.avatar.group.position.set(p.x, p.y, p.z);
+  p.avatar.group.rotation.y = p.rotY;
+  p.avatar.animate(dt, Math.hypot(p.vx, p.vz) > 0.45, p.isGrounded);
+}
+
+function handlePlatformLanding(p, plat) {
+  if (plat.type === 'normal' || plat.type === 'conveyor_left' || plat.type === 'conveyor_right' || plat.type === 'ice') {
+    if (p.lastHealedFloor !== plat.floorIndex) {
+      p.lastHealedFloor = plat.floorIndex;
+      if (p.hp < 12) {
+        p.hp = Math.min(12, p.hp + 1);
+        p.avatar.hp = p.hp;
+        p.avatar.refreshOverheadLabel();
+        if (p.isLocal) updateHudUI();
+      }
+      if (p.isLocal) {
+        if (plat.type === 'ice') sfx.stepIce();
+        else sfx.stepNormal();
+      }
+    }
+  } else if (plat.type === 'spike') {
+    if (p.lastHealedFloor !== plat.floorIndex) {
+      p.lastHealedFloor = plat.floorIndex;
+      p.vy = 4.6;
+      p.isGrounded = false;
+      if (p.isLocal) sfx.stepSpike();
+      damagePlayer(p, 3, `🩸 ${p.name} 踩上尖刺釘板陣亡！`);
+    }
+  } else if (plat.type === 'spring') {
+    p.vy = 13.2;
+    p.isGrounded = false;
+    if (p.isLocal) sfx.stepSpring();
+  } else if (plat.type === 'cracked') {
+    if (plat.crackedTimer === 0) {
+      plat.crackedTimer = 0.01;
+      if (p.isLocal) sfx.stepCracked();
+    }
+  }
+}
+
+// ================= MAIN RENDER LOOP =================
+let lastTime = performance.now();
+
+function animate(now) {
+  requestAnimationFrame(animate);
+  const dt = Math.min(0.05, (now - lastTime) / 1000);
+  lastTime = now;
+
+  if (gameState === 'lobby') {
+    if (!isDraggingPreview) {
+      lobbyAvatar.group.rotation.y += dt * 0.55;
+    }
+    lobbyAvatar.animate(dt, false, true);
+    camera.position.set(0, 1.45, 3.85);
+    camera.lookAt(0, 1.05, 0);
+  } else if (gameState === 'playing') {
+    // Cooldown UI timers
+    if (shoveCooldown > 0) {
+      shoveCooldown = Math.max(0, shoveCooldown - dt);
+      document.getElementById('shove-cd-text').textContent =
+        shoveCooldown > 0 ? `${shoveCooldown.toFixed(1)}s` : '就緒';
+    }
+    if (ghostCurseCooldown > 0) {
+      ghostCurseCooldown = Math.max(0, ghostCurseCooldown - dt);
+      document.getElementById('curse-cd-text').textContent =
+        ghostCurseCooldown > 0 ? `冷卻 ${ghostCurseCooldown.toFixed(1)}s` : '變成尖刺/碎裂磚';
+    }
+    if (ghostRockCooldown > 0) {
+      ghostRockCooldown = Math.max(0, ghostRockCooldown - dt);
+      document.getElementById('rock-cd-text').textContent =
+        ghostRockCooldown > 0 ? `${ghostRockCooldown.toFixed(1)}s` : '就緒';
+    }
+
+    // Find lowest player Y to ensure floors are generated ahead
+    let lowestY = world.ceilingY - 10;
+    players.forEach((p) => {
+      if (!p.isGhost && p.y < lowestY) lowestY = p.y;
+    });
+
+    world.update(dt, lowestY);
+
+    players.forEach((p) => {
+      updatePlayerPhysics(p, dt);
+    });
+
+    // Update ceiling warning pill
+    if (localPlayer && !localPlayer.isGhost) {
+      const ceilDist = Math.max(0, world.ceilingY - (localPlayer.y + 1.6));
+      const warnEl = document.getElementById('hud-ceiling-warn');
+      warnEl.textContent = ceilDist < 3.5
+        ? `🚨 小心頭頂尖刺！(${ceilDist.toFixed(1)}m)`
+        : `⚙️ 尖刺距離 ${ceilDist.toFixed(1)}m`;
+    }
+
+    // Smart 3D Party Camera (frames ceiling above + platforms below clearly on mobile)
+    if (localPlayer) {
+      const targetCamX = localPlayer.x * 0.38;
+      const targetCamY = cameraCloseMode ? localPlayer.y + 3.2 : localPlayer.y + 3.8;
+      const targetCamZ = cameraCloseMode ? 11.2 : 15.2;
+
+      camera.position.x += (targetCamX - camera.position.x) * Math.min(1, dt * 6);
+      camera.position.y += (targetCamY - camera.position.y) * Math.min(1, dt * 7);
+      camera.position.z += (targetCamZ - camera.position.z) * Math.min(1, dt * 6);
+
+      // Look slightly below the player so upcoming platforms are always visible on phone screens
+      camera.lookAt(localPlayer.x * 0.25, localPlayer.y - 2.2, 0);
+    }
+
+    // Broadcast state over PeerJS at ~20Hz
+    netSyncAccumulator += dt;
+    if (netSyncAccumulator >= 0.05 && localPlayer) {
+      netSyncAccumulator = 0;
+      network.sendState({
+        x: localPlayer.x,
+        y: localPlayer.y,
+        z: localPlayer.z,
+        vx: localPlayer.vx,
+        vy: localPlayer.vy,
+        vz: localPlayer.vz,
+        rotY: localPlayer.rotY,
+        hp: localPlayer.hp,
+        floor: localPlayer.maxFloor,
+        heldItem: localPlayer.heldItem,
+        hasBomb: localPlayer.hasBomb,
+        isGhost: localPlayer.isGhost
+      });
+    }
+  }
+
+  renderer.render(scene, camera);
+}
+
+requestAnimationFrame(animate);
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
 });
