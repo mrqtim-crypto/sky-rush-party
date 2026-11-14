@@ -747,12 +747,14 @@ class TaiwanChameleonGame {
     this.myAvatar.triggerSlipperSwing();
     this.net.sendAction('slipper_swing', {});
 
-    // 1. Check if we hit any Chameleon within 2.5m in front/around the Hunter
+    // 1. Check if we hit any Chameleon within 2.5m horizontally & 1.8m vertically
     let hitTarget = null;
     let bestDist = 2.55;
 
     for (const [, p] of this.otherPlayers.entries()) {
       if (p.role !== 'chameleon') continue;
+      const dy = Math.abs((p.y || 0) - this.myPos.y);
+      if (dy > 1.85) continue;
       const dx = p.x - this.myPos.x;
       const dz = p.z - this.myPos.z;
       const dist = Math.hypot(dx, dz);
@@ -923,14 +925,16 @@ class TaiwanChameleonGame {
           const dz = bot.botSpot.z - bot.z;
           const dist = Math.hypot(dx, dz);
           if (dist > 0.35) {
-            const step = Math.min(dist, 5.5 * dt);
+            const step = Math.min(dist, 5.8 * dt);
             bot.x += (dx / dist) * step;
             bot.z += (dz / dist) * step;
+            bot.y = this.world.getSurfaceHeightAt(bot.x, bot.z, bot.y);
             bot.rotY = Math.atan2(dx, dz);
             bot.avatar.update(dt, true);
           } else {
             bot.x = bot.botSpot.x;
             bot.z = bot.botSpot.z;
+            bot.y = bot.botSpot.y !== undefined ? bot.botSpot.y : this.world.getSurfaceHeightAt(bot.x, bot.z, bot.y);
             bot.rotY = bot.botSpot.rotY || 0;
             bot.avatar.applyPose(bot.botSpot.poseId || 'cone');
             const partData = (bot.botSpot.colors || []).map((c, idx) => ({
@@ -972,17 +976,20 @@ class TaiwanChameleonGame {
 
         bot.x += Math.sin(bot.botWanderAngle) * 5.2 * dt;
         bot.z += Math.cos(bot.botWanderAngle) * 5.2 * dt;
-        bot.x = Math.max(-32, Math.min(32, bot.x));
-        bot.z = Math.max(-25, Math.min(25, bot.z));
+        const resolvedBot = this.world.resolveHorizontalCollision(bot.x, bot.y, bot.z, 0.38);
+        bot.x = Math.max(-34, Math.min(34, resolvedBot.x));
+        bot.z = Math.max(-26, Math.min(26, resolvedBot.z));
+        bot.y = this.world.getSurfaceHeightAt(bot.x, bot.z, bot.y);
         bot.rotY = bot.botWanderAngle;
         bot.avatar.update(dt, true);
 
         // Check if AI Hunter catches a player who is moving or pure white nearby
         if (this.myAvatar.role === 'chameleon') {
+          const dy = Math.abs(this.myPos.y - bot.y);
           const dMe = Math.hypot(this.myPos.x - bot.x, this.myPos.z - bot.z);
           const isMePureWhite = this.myAvatar.partColors[0] === '#ffffff' && this.myAvatar.poseId === 'stand';
           const detectRadius = isMePureWhite || !this.isPositionLocked ? 2.1 : 0.85;
-          if (dMe < detectRadius) {
+          if (dy < 1.8 && dMe < detectRadius) {
             bot.avatar.triggerSlipperSwing();
             this.infectPlayer(this.net.myId, bot.name);
           }
@@ -1332,23 +1339,38 @@ class TaiwanChameleonGame {
       this.myRotY = moveAngle;
     }
 
+    // Resolve horizontal collision with container maze walls & pillars
+    const resolved = this.world.resolveHorizontalCollision(this.myPos.x, this.myPos.y, this.myPos.z, 0.38);
+    this.myPos.x = resolved.x;
+    this.myPos.z = resolved.z;
+
     // Keep Hunter inside Metro Exit 4 Gate during 90s Hide Phase
     if (this.myAvatar.role === 'hunter' && this.phase === 'hide') {
       this.myPos.x = Math.max(-3.2, Math.min(3.2, this.myPos.x));
-      this.myPos.z = Math.max(25.8, Math.min(30.2, this.myPos.z));
+      this.myPos.z = Math.max(26.8, Math.min(31.2, this.myPos.z));
     } else {
-      this.myPos.x = Math.max(-35, Math.min(35, this.myPos.x));
-      this.myPos.z = Math.max(-27, Math.min(30, this.myPos.z));
+      this.myPos.x = Math.max(-38, Math.min(38, this.myPos.x));
+      this.myPos.z = Math.max(-28, Math.min(31, this.myPos.z));
     }
 
-    // Vertical Gravity & Jump
+    // Multi-Level Surface Elevation (2F Skybridge, Escalator Ramps, Container Roofs, Claw Machines, Moving Bus!)
+    const targetGroundY = this.world.getSurfaceHeightAt(this.myPos.x, this.myPos.z, this.myPos.y);
+
     if (!this.isGrounded) {
       this.myPos.y += this.myVelY * dt;
       this.myVelY -= 19.5 * dt;
-      if (this.myPos.y <= 0) {
-        this.myPos.y = 0;
+      if (this.myPos.y <= targetGroundY) {
+        this.myPos.y = targetGroundY;
         this.myVelY = 0;
         this.isGrounded = true;
+      }
+    } else {
+      // Smoothly step up ramps or fall off ledges
+      if (targetGroundY >= this.myPos.y - 0.5) {
+        this.myPos.y += (targetGroundY - this.myPos.y) * Math.min(1, dt * 16);
+      } else {
+        this.isGrounded = false;
+        this.myVelY = 0;
       }
     }
 
